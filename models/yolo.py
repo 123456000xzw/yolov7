@@ -19,6 +19,7 @@ try:
 except ImportError:
     thop = None
 
+n_att=2
 
 class Detect(nn.Module):
     stride = None  # strides computed during build
@@ -103,7 +104,7 @@ class IDetect(nn.Module):
 
     def __init__(self, n_names=80, anchors=(), ch=()):  # detection layer
         super(IDetect, self).__init__()
-        self.n_names = n_names  # number of classes
+        self.n_classes = n_names  # number of classes
         self.no = n_names + 5  # number of outputs per anchor
         self.nl = len(anchors)  # number of detection layers
         self.na = len(anchors[0]) // 2  # number of anchors
@@ -155,7 +156,7 @@ class IDetect(nn.Module):
                     y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
                     y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
                 else:
-                    xy, wh, conf = y.split((2, 2, self.n_names + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
+                    xy, wh, conf = y.split((2, 2, self.n_classes + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
                     xy = xy * (2. * self.stride[i]) + (self.stride[i] * (self.grid[i] - 0.5))  # new xy
                     wh = wh ** 2 * (4 * self.anchor_grid[i].data)  # new wh
                     y = torch.cat((xy, wh, conf), 4)
@@ -177,6 +178,118 @@ class IDetect(nn.Module):
     
     def fuse(self):
         print("IDetect.fuse")
+        # fuse ImplicitA and Convolution
+        for i in range(len(self.m)):
+            c1,c2,_,_ = self.m[i].weight.shape
+            c1_,c2_, _,_ = self.ia[i].implicit.shape
+            self.m[i].bias += torch.matmul(self.m[i].weight.reshape(c1,c2),self.ia[i].implicit.reshape(c2_,c1_)).squeeze(1)
+
+        # fuse ImplicitM and Convolution
+        for i in range(len(self.m)):
+            c1,c2, _,_ = self.im[i].implicit.shape
+            self.m[i].bias *= self.im[i].implicit.reshape(c2)
+            self.m[i].weight *= self.im[i].implicit.transpose(0,1)
+            
+    @staticmethod
+    def _make_grid(nx=20, ny=20):
+        yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
+        return torch.stack((xv, yv), 2).view((1, 1, ny, nx, 2)).float()
+
+    def convert(self, z):
+        z = torch.cat(z, 1)
+        box = z[:, :, :4]
+        conf = z[:, :, 4:5]
+        score = z[:, :, 5:]
+        score *= conf
+        convert_matrix = torch.tensor([[1, 0, 1, 0], [0, 1, 0, 1], [-0.5, 0, 0.5, 0], [0, -0.5, 0, 0.5]],
+                                           dtype=torch.float32,
+                                           device=z.device)
+        box @= convert_matrix                          
+        return (box, score)
+
+class IDetect_color(nn.Module):
+    stride = None  # strides computed during build
+    export = False  # onnx export
+    end2end = False
+    include_nms = False
+    concat = False
+
+    def __init__(self, n_colors=3, anchors=(), ch=()):  # detection layer
+        super(IDetect_color, self).__init__()
+        self.n_classes = n_colors  # number of classes
+        self.no = n_colors + 5  # number of outputs per anchor
+        self.nl = len(anchors)  # number of detection layers
+        self.na = len(anchors[0]) // 2  # number of anchors
+        self.grid = [torch.zeros(1)] * self.nl  # init grid
+        a = torch.tensor(anchors).float().view(self.nl, -1, 2)
+        self.register_buffer('anchors', a)  # shape(nl,na,2)
+        self.register_buffer('anchor_grid', a.clone().view(self.nl, 1, -1, 1, 1, 2))  # shape(nl,1,na,1,1,2)
+        self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
+        
+        self.ia = nn.ModuleList(ImplicitA(x) for x in ch)
+        self.im = nn.ModuleList(ImplicitM(self.no * self.na) for _ in ch)
+
+    def forward(self, x):
+        # x = x.copy()  # for profiling
+        z = []  # inference output
+        self.training |= self.export
+        for i in range(self.nl):
+            x[i] = self.m[i](self.ia[i](x[i]))  # conv
+            x[i] = self.im[i](x[i])
+            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+
+            if not self.training:  # inference
+                if self.grid[i].shape[2:4] != x[i].shape[2:4]:
+                    self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
+
+                y = x[i].sigmoid()
+                y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                z.append(y.view(bs, -1, self.no))
+
+        return x if self.training else (torch.cat(z, 1), x)
+    
+    def fuseforward(self, x):
+        # x = x.copy()  # for profiling
+        z = []  # inference output
+        self.training |= self.export
+        for i in range(self.nl):
+            x[i] = self.m[i](x[i])  # conv
+            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+
+            if not self.training:  # inference
+                if self.grid[i].shape[2:4] != x[i].shape[2:4]:
+                    self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
+
+                y = x[i].sigmoid()
+                if not torch.onnx.is_in_onnx_export():
+                    y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                else:
+                    xy, wh, conf = y.split((2, 2, self.n_classes + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
+                    xy = xy * (2. * self.stride[i]) + (self.stride[i] * (self.grid[i] - 0.5))  # new xy
+                    wh = wh ** 2 * (4 * self.anchor_grid[i].data)  # new wh
+                    y = torch.cat((xy, wh, conf), 4)
+                z.append(y.view(bs, -1, self.no))
+
+        if self.training:
+            out = x
+        elif self.end2end:
+            out = torch.cat(z, 1)
+        elif self.include_nms:
+            z = self.convert(z)
+            out = (z, )
+        elif self.concat:
+            out = torch.cat(z, 1)            
+        else:
+            out = (torch.cat(z, 1), x)
+
+        return out
+    
+    def fuse(self):
+        print("IDetect_color.fuse")
         # fuse ImplicitA and Convolution
         for i in range(len(self.m)):
             c1,c2,_,_ = self.m[i].weight.shape
@@ -506,7 +619,7 @@ class IBin(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, cfg='yolor-csp-c.yaml', ch=3, n_names=None, anchors=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolor-csp-c.yaml', ch=3, n_classes_lis=None, anchors=None):  # model, input channels, number of classes
         super(Model, self).__init__()
         self.traced = False
         if isinstance(cfg, dict):
@@ -518,60 +631,75 @@ class Model(nn.Module):
                 self.yaml = yaml.load(f, Loader=yaml.SafeLoader)  # model dict
 
         # Define model
+        n_classes_lis=self.yaml['n_classes_lis'] = self.yaml.get('n_classes_lis', n_classes_lis)
+        #print("99",n_classes_lis)
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
-        if n_names and n_names != self.yaml['n_names']:
-            logger.info(f"Overriding model.yaml n_names={self.yaml['n_names']} with n_names={n_names}")
-            self.yaml['n_names'] = n_names  # override yaml value
+        if n_classes_lis and n_classes_lis != self.yaml['n_classes_lis']:
+            logger.info(f"Overriding model.yaml n_classes_lis={self.yaml['n_classes_lis']} with n_classes_lis={n_classes_lis}")
+            self.yaml['n_classes_lis'] = n_classes_lis  # override yaml value
         if anchors:
             logger.info(f'Overriding model.yaml anchors with anchors={anchors}')
             self.yaml['anchors'] = round(anchors)  # override yaml value
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
-        self.names = [str(i) for i in range(self.yaml['n_names'])]  # default names
+        self.classes = [str(i) for i in range(self.yaml['n_names'])]  # default names
         # print([x.shape for x in self.forward(torch.zeros(1, ch, 64, 64))])
 
         # Build strides, anchors
-        m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):
-            s = 256  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-            check_anchor_order(m)
-            m.anchors /= m.stride.view(-1, 1, 1)
-            self.stride = m.stride
+        self.heads=[]
+        self.stride=[]
+        for i in range(1,n_att+1):
+            m = self.model[-i]  # Detect()
+            if isinstance(m, Detect):
+                s = 256  # 2x min stride
+                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                check_anchor_order(m)
+                m.anchors /= m.stride.view(-1, 1, 1)
+                self.stride = m.stride
+                self._initialize_biases()  # only run once
+                # print('Strides: %s' % m.stride.tolist())
+            if isinstance(m, IDetect):
+                s = 256  # 2x min stride
+                m.stride = torch.tensor([s / x[0].shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                check_anchor_order(m)
+                m.anchors /= m.stride.view(-1, 1, 1)
+                self.stride.append(m.stride)
+                self._initialize_biases(i=i)  # only run once
+                # print('Strides: %s' % m.stride.tolist())
+            if isinstance(m, IDetect_color):
+                s = 256  # 2x min stride
+                m.stride = torch.tensor([s / x[0].shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                check_anchor_order(m)
+                m.anchors /= m.stride.view(-1, 1, 1)
+                self.stride.append(m.stride)
+                self._initialize_biases(i=i)  # only run once
+                # print('Strides: %s' % m.stride.tolist())
+            if isinstance(m, IAuxDetect):
+                s = 256  # 2x min stride
+                m.stride = torch.tensor([s / x[0].shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[:4]])  # forward
+                #print(m.stride)
+                check_anchor_order(m)
+                m.anchors /= m.stride.view(-1, 1, 1)
+                self.stride = m.stride
+                self._initialize_aux_biases()  # only run once
+                # print('Strides: %s' % m.stride.tolist())
+            if isinstance(m, IBin):
+                s = 256  # 2x min stride
+                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                check_anchor_order(m)
+                m.anchors /= m.stride.view(-1, 1, 1)
+                self.stride = m.stride
+                self._initialize_biases_bin()  # only run once
+                # print('Strides: %s' % m.stride.tolist())
+            if isinstance(m, IKeypoint):
+                s = 256  # 2x min stride
+                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                check_anchor_order(m)
+                m.anchors /= m.stride.view(-1, 1, 1)
+                self.stride = m.stride
+                self._initialize_biases_kpt()  # only run once
+                # print('Strides: %s' % m.stride.tolist())
             self._initialize_biases()  # only run once
-            # print('Strides: %s' % m.stride.tolist())
-        if isinstance(m, IDetect):
-            s = 256  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-            check_anchor_order(m)
-            m.anchors /= m.stride.view(-1, 1, 1)
-            self.stride = m.stride
-            self._initialize_biases()  # only run once
-            # print('Strides: %s' % m.stride.tolist())
-        if isinstance(m, IAuxDetect):
-            s = 256  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[:4]])  # forward
-            #print(m.stride)
-            check_anchor_order(m)
-            m.anchors /= m.stride.view(-1, 1, 1)
-            self.stride = m.stride
-            self._initialize_aux_biases()  # only run once
-            # print('Strides: %s' % m.stride.tolist())
-        if isinstance(m, IBin):
-            s = 256  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-            check_anchor_order(m)
-            m.anchors /= m.stride.view(-1, 1, 1)
-            self.stride = m.stride
-            self._initialize_biases_bin()  # only run once
-            # print('Strides: %s' % m.stride.tolist())
-        if isinstance(m, IKeypoint):
-            s = 256  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-            check_anchor_order(m)
-            m.anchors /= m.stride.view(-1, 1, 1)
-            self.stride = m.stride
-            self._initialize_biases_kpt()  # only run once
-            # print('Strides: %s' % m.stride.tolist())
+            self.heads.append(m)
 
         # Init weights, biases
         initialize_weights(self)
@@ -599,6 +727,9 @@ class Model(nn.Module):
             return self.forward_once(x, profile)  # single-scale inference, train
 
     def forward_once(self, x, profile=False):
+        out=[]
+        out_lis=len(self.model)-torch.tensor(list(range(1,n_att+1)))
+        #print(out_lis)
         y, dt = [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
@@ -608,11 +739,11 @@ class Model(nn.Module):
                 self.traced=False
 
             if self.traced:
-                if isinstance(m, Detect) or isinstance(m, IDetect) or isinstance(m, IAuxDetect) or isinstance(m, IKeypoint):
+                if isinstance(m, Detect) or isinstance(m, IDetect) or isinstance(m, IDetect_color) or isinstance(m, IAuxDetect) or isinstance(m, IKeypoint):
                     break
 
             if profile:
-                c = isinstance(m, (Detect, IDetect, IAuxDetect, IBin))
+                c = isinstance(m, (Detect, IDetect,IDetect_color,IAuxDetect, IBin))
                 o = thop.profile(m, inputs=(x.copy() if c else x,), verbose=False)[0] / 1E9 * 2 if thop else 0  # FLOPS
                 for _ in range(10):
                     m(x.copy() if c else x)
@@ -623,21 +754,27 @@ class Model(nn.Module):
                 print('%10.1f%10.0f%10.1fms %-40s' % (o, m.np, dt[-1], m.type))
 
             x = m(x)  # run
-            
             y.append(x if m.i in self.save else None)  # save output
+            
+            if m.i in out_lis:
+                out.append(x)
+                print(m.i,x[0].size(),len(x))
 
         if profile:
             print('%.1fms total' % sum(dt))
-        return x
+        
+        #print("x,",x[0].size())
+        
+        return out
 
-    def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
+    def _initialize_biases(self, i=1,cf=None):  # initialize biases into Detect(), cf is class frequency
         # https://arxiv.org/abs/1708.02002 section 3.3
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=n_names) + 1.
-        m = self.model[-1]  # Detect() module
+        m = self.model[-i]  # Detect() module
         for mi, s in zip(m.m, m.stride):  # from
             b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
             b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-            b.data[:, 5:] += math.log(0.6 / (m.n_names - 0.99)) if cf is None else torch.log(cf / cf.sum())  # cls
+            b.data[:, 5:] += math.log(0.6 / (m.n_classes - 0.99)) if cf is None else torch.log(cf / cf.sum())  # cls
             mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
     def _initialize_aux_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
@@ -735,7 +872,8 @@ class Model(nn.Module):
 
 def parse_model(d, ch):  # model_dict, input_channels(3)
     #logger.info('\n%3s%18s%3s%10s  %-40s%-30s' % ('', 'from', 'n', 'params', 'module', 'arguments'))
-    anchors, n_names, gd, gw = d['anchors'], d['n_names'], d['depth_multiple'], d['width_multiple']
+    n_att=len(d['n_classes_lis'])
+    anchors, n_names,n_classes_lis,gd, gw = d['anchors'], d['n_names'], d['n_classes_lis'], d['depth_multiple'], d['width_multiple']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
     no = na * (n_names + 5)  # number of outputs = anchors * (classes + 5)
 
@@ -744,7 +882,10 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         m = eval(m) if isinstance(m, str) else m  # eval strings
         for j, a in enumerate(args):
             try:
-                args[j] = eval(a) if isinstance(a, str) else a  # eval strings
+                if a == "n_colors":
+                    args[j]=d[a]
+                else:
+                    args[j] = eval(a) if isinstance(a, str) else a  # eval strings
             except:
                 pass
 
@@ -787,10 +928,12 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             c2 = ch[f[0]]
         elif m is Foldcut:
             c2 = ch[f] // 2
-        elif m in [Detect, IDetect, IAuxDetect, IBin, IKeypoint]:
+        elif m in [Detect, IDetect,IDetect_color, IAuxDetect, IBin, IKeypoint]:
             args.append([ch[x] for x in f])
+            #print(args)
             if isinstance(args[1], int):  # number of anchors
                 args[1] = [list(range(args[1] * 2))] * len(f)
+                #print(args)
         elif m is ReOrg:
             c2 = ch[f] * 4
         elif m is Contract:
