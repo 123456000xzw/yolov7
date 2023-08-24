@@ -558,6 +558,7 @@ class ComputeLossOTA:
     # Compute losses
     def __init__(self, model, autobalance=False):
         super(ComputeLossOTA, self).__init__()
+        self.n_classes_lis=model.n_classes_lis
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters
 
@@ -583,12 +584,29 @@ class ComputeLossOTA:
     def __call__(self, p, targets, imgs):  # predictions, targets, model   
         device = targets.device
         lcls, lbox, lobj = torch.zeros(n_att, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
-        bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
-        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
+        bs, as_, gjs, gis, targets, anchors = self.build_targets(p[0], targets, imgs)
+        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p[0]] 
     
 
         # Losses
-        for i, pi in enumerate(p):  # layer index, layer predictions
+        #cls Losses
+        for k in range(n_att):
+            for i, pi in enumerate(p[k]):
+                b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
+                tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
+
+                n = b.shape[0]  # number of targets
+                if n:
+                    ps = p[0][i][b, a, gj, gi]  # prediction subset corresponding to targets
+                    # Classification
+                    selected_tcls = targets[i][:, 1].long()
+                    if self.n_classes_lis[k] > 1:  # cls loss (only if multiple classes)
+                        t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
+                        t[range(n), selected_tcls] = self.cp
+                        lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
+        
+        #other Losses
+        for i, pi in enumerate(p[0]):  # layer index, layer predictions
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
@@ -610,12 +628,14 @@ class ComputeLossOTA:
                 # Objectness
                 tobj[b, a, gj, gi] = (1.0 - self.gr) + self.gr * iou.detach().clamp(0).type(tobj.dtype)  # iou ratio
 
+                """
                 # Classification
                 selected_tcls = targets[i][:, 1].long()
                 if self.n_names > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
+                """
 
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
@@ -633,7 +653,7 @@ class ComputeLossOTA:
         lcls *= self.hyp['cls']
         bs = tobj.shape[0]  # batch size
 
-        loss = lbox + lobj + lcls
+        loss = lbox + lobj + sum(lcls)
         return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
 
     def build_targets(self, p, targets, imgs):
@@ -659,8 +679,8 @@ class ComputeLossOTA:
             this_target = targets[b_idx]
             if this_target.shape[0] == 0:
                 continue
-                
-            txywh = this_target[:, 2:6] * imgs[batch_idx].shape[1]
+            print()
+            txywh = this_target[:, n_att+1:n_att+5] * imgs[batch_idx].shape[1]
             txyxy = xywh2xyxy(txywh)
 
             pxyxys = []
@@ -717,7 +737,7 @@ class ComputeLossOTA:
             dynamic_ks = torch.clamp(top_k.sum(1).int(), min=1)
 
             gt_cls_per_image = (
-                F.one_hot(this_target[:, 1].to(torch.int64), self.n_names)
+                F.one_hot(this_target[:, 1].to(torch.int64), self.n_classes_lis[0])
                 .float()
                 .unsqueeze(1)
                 .repeat(1, pxyxys.shape[0], 1)
@@ -797,7 +817,7 @@ class ComputeLossOTA:
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
         na, nt = self.na, targets.shape[0]  # number of anchors, targets
         indices, anch = [], []
-        gain = torch.ones(7, device=targets.device).long()  # normalized to gridspace gain
+        gain = torch.ones(6+n_att, device=targets.device).long()  # normalized to gridspace gain
         ai = torch.arange(na, device=targets.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
         targets = torch.cat((targets.repeat(na, 1, 1), ai[:, :, None]), 2)  # append anchor indices
 
@@ -809,20 +829,20 @@ class ComputeLossOTA:
 
         for i in range(self.nl):
             anchors = self.anchors[i]
-            gain[2:6] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
+            gain[n_att+1:n_att+5] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
             t = targets * gain
             if nt:
                 # Matches
-                r = t[:, :, 4:6] / anchors[:, None]  # wh ratio
+                r = t[:, :, n_att+3:n_att+5] / anchors[:, None]  # wh ratio
                 j = torch.max(r, 1. / r).max(2)[0] < self.hyp['anchor_t']  # compare
                 # j = wh_iou(anchors, t[:, 4:6]) > model.hyp['iou_t']  # iou(3,n)=wh_iou(anchors(3,2), gwh(n,2))
                 t = t[j]  # filter
 
                 # Offsets
-                gxy = t[:, 2:4]  # grid xy
-                gxi = gain[[2, 3]] - gxy  # inverse
+                gxy = t[:, n_att+1:n_att+3]  # grid xy
+                gxi = gain[[n_att+1, n_att+2]] - gxy  # inverse
                 j, k = ((gxy % 1. < g) & (gxy > 1.)).T
                 l, m = ((gxi % 1. < g) & (gxi > 1.)).T
                 j = torch.stack((torch.ones_like(j), j, k, l, m))
@@ -833,15 +853,15 @@ class ComputeLossOTA:
                 offsets = 0
 
             # Define
-            b, c = t[:, :2].long().T  # image, class
-            gxy = t[:, 2:4]  # grid xy
-            gwh = t[:, 4:6]  # grid wh
+            b, *c = t[:, :n_att+1].long().T  # image, class
+            gxy = t[:, n_att+1:n_att+3]  # grid xy
+            gwh = t[:, n_att+3:n_att+5]  # grid wh
             gij = (gxy - offsets).long()
             gi, gj = gij.T  # grid xy indices
 
             # Append
-            a = t[:, 6].long()  # anchor indices
-            indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
+            a = t[:, n_att+5].long()  # anchor indices
+            indices.append((b, a, gj.clamp_(0, gain[n_att+2] - 1), gi.clamp_(0, gain[n_att+1] - 1)))  # image, anchor, grid indices
             anch.append(anchors[a])  # anchors
 
         return indices, anch

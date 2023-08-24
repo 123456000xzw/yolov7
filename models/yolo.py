@@ -621,6 +621,7 @@ class IBin(nn.Module):
 class Model(nn.Module):
     def __init__(self, cfg='yolor-csp-c.yaml', ch=3, n_classes_lis=None, anchors=None):  # model, input channels, number of classes
         super(Model, self).__init__()
+        
         self.traced = False
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -631,7 +632,7 @@ class Model(nn.Module):
                 self.yaml = yaml.load(f, Loader=yaml.SafeLoader)  # model dict
 
         # Define model
-        n_classes_lis=self.yaml['n_classes_lis'] = self.yaml.get('n_classes_lis', n_classes_lis)
+        n_classes_lis=self.n_classes_lis=self.yaml['n_classes_lis'] = self.yaml.get('n_classes_lis', n_classes_lis)
         #print("99",n_classes_lis)
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
         if n_classes_lis and n_classes_lis != self.yaml['n_classes_lis']:
@@ -659,7 +660,7 @@ class Model(nn.Module):
                 # print('Strides: %s' % m.stride.tolist())
             if isinstance(m, IDetect):
                 s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x[0].shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[0]])  # forward
                 check_anchor_order(m)
                 m.anchors /= m.stride.view(-1, 1, 1)
                 self.stride.append(m.stride)
@@ -667,7 +668,7 @@ class Model(nn.Module):
                 # print('Strides: %s' % m.stride.tolist())
             if isinstance(m, IDetect_color):
                 s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x[0].shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[1]])  # forward
                 check_anchor_order(m)
                 m.anchors /= m.stride.view(-1, 1, 1)
                 self.stride.append(m.stride)
@@ -675,7 +676,7 @@ class Model(nn.Module):
                 # print('Strides: %s' % m.stride.tolist())
             if isinstance(m, IAuxDetect):
                 s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x[0].shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[:4]])  # forward
+                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[:4]])  # forward
                 #print(m.stride)
                 check_anchor_order(m)
                 m.anchors /= m.stride.view(-1, 1, 1)
@@ -758,7 +759,7 @@ class Model(nn.Module):
             
             if m.i in out_lis:
                 out.append(x)
-                print(m.i,x[0].size(),len(x))
+                #print(m.i,x[0].size(),len(x))
 
         if profile:
             print('%.1fms total' % sum(dt))
