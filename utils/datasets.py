@@ -495,9 +495,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                             l = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), 1)  # (cls, xywh)
                         l = np.array(l, dtype=np.float32)
                     if len(l):
-                        assert l.shape[1] == 6, 'labels require 5 columns each'
+                        assert l.shape[1] == (4+n_att), 'labels require 5 columns each'
                         assert (l >= 0).all(), 'negative labels'
-                        assert (l[:, 2:] <= 1).all(), 'non-normalized or out of bounds coordinate labels'
+                        assert (l[:, n_att:] <= 1).all(), 'non-normalized or out of bounds coordinate labels'
                         assert np.unique(l, axis=0).shape[0] == l.shape[0], 'duplicate labels'
                     else:
                         ne += 1  # label empty

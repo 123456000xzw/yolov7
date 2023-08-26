@@ -5,6 +5,7 @@ depth_multiple: 1.0  # model depth multiple
 width_multiple: 1.0  # layer channel multiple
 n_classes_lis: [80,3] #classes of each attribute
 
+
 # anchors
 anchors:
   - [12,16, 19,36, 40,28]  # P3/8

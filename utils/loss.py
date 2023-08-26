@@ -424,6 +424,7 @@ class ComputeLoss:
     # Compute losses
     def __init__(self, model, autobalance=False):
         super(ComputeLoss, self).__init__()
+        self.n_classes_lis=model.n_classes_lis
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters
 
@@ -450,11 +451,28 @@ class ComputeLoss:
 
     def __call__(self, p, targets):  # predictions, targets, model
         device = targets.device
-        lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
-        tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
+        lcls, lbox, lobj = torch.zeros(n_att, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
+        tcls, tbox, indices, anchors = self.build_targets(p[0], targets)  # targets
 
         # Losses
-        for i, pi in enumerate(p):  # layer index, layer predictions
+        #cls Losses
+        for k in range(n_att):
+            for i, pi in enumerate(p[k]):
+                b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
+                tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
+
+                n = b.shape[0]  # number of targets
+                if n:
+                    ps = p[0][i][b, a, gj, gi]  # prediction subset corresponding to targets
+                    # Classification
+                    selected_tcls = targets[i][:, 1].long()
+                    if self.n_classes_lis[k] > 1:  # cls loss (only if multiple classes)
+                        t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
+                        t[range(n), selected_tcls] = self.cp
+                        lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
+        
+        #other Losses
+        for i, pi in enumerate(p[0]):  # layer index, layer predictions
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
@@ -471,13 +489,15 @@ class ComputeLoss:
 
                 # Objectness
                 tobj[b, a, gj, gi] = (1.0 - self.gr) + self.gr * iou.detach().clamp(0).type(tobj.dtype)  # iou ratio
-
+                
+                """
                 # Classification
                 if self.n_names > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
                     t[range(n), tcls[i]] = self.cp
                     #t[t==self.cp] = iou.detach().clamp(0).type(t.dtype)
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
+                """
 
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
@@ -495,15 +515,15 @@ class ComputeLoss:
         lcls *= self.hyp['cls']
         bs = tobj.shape[0]  # batch size
 
-        loss = lbox + lobj + lcls
+        loss = lbox + lobj + sum(lcls)
         return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
         na, nt = self.na, targets.shape[0]  # number of anchors, targets
         tcls, tbox, indices, anch = [], [], [], []
-        gain = torch.ones(7, device=targets.device).long()  # normalized to gridspace gain
-        ai = torch.arange(na, device=targets.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
+        gain = torch.ones(6+n_att, device=targets.device).long()  # normalized to gridspace gain
+        ai = torch.arange(na, device=targets.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interln_atteave(nt)
         targets = torch.cat((targets.repeat(na, 1, 1), ai[:, :, None]), 2)  # append anchor indices
 
         g = 0.5  # bias
@@ -514,7 +534,8 @@ class ComputeLoss:
 
         for i in range(self.nl):
             anchors = self.anchors[i]
-            gain[2:6] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
+            print("\nComputeLossSame",p[0].shape)
+            gain[1+n_att:5+n_att] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
             t = targets * gain
@@ -829,6 +850,7 @@ class ComputeLossOTA:
 
         for i in range(self.nl):
             anchors = self.anchors[i]
+            print("\nOTASame",p[0].shape)
             gain[n_att+1:n_att+5] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
@@ -1325,7 +1347,7 @@ class ComputeLossAuxOTA:
             if this_target.shape[0] == 0:
                 continue
                 
-            txywh = this_target[:, 2:6] * imgs[batch_idx].shape[1]
+            txywh = this_target[:, 1+n_att:5+n_att] * imgs[batch_idx].shape[1]
             txyxy = xywh2xyxy(txywh)
 
             pxyxys = []

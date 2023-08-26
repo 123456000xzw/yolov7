@@ -25,3 +25,9 @@ names: [ 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', '
 #attributes
 n_colors: 3
 colors_att: ['red','green','blue']
+
+#names for each attribute
+name_att: ['cls_name','cls_color'] 
+
+#classes of each attribute
+n_classes_lis: [80,3] 

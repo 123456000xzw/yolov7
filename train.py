@@ -40,6 +40,7 @@ from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 
 #OMP: Error #15
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+n_att=2
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,8 @@ def train(hyp, opt, device, tb_writer=None):
     assert len(names) == n_names, '%g names found for n_names=%g dataset in %s' % (len(names), n_names, opt.data)  # check
 
     colors_att=data_dict['colors_att']
+
+    cls_att=data_dict['name_att']
 
     # Model
     pretrained = weights.endswith('.pt')
@@ -255,6 +258,7 @@ def train(hyp, opt, device, tb_writer=None):
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
+    print("dataset",f"{len(dataset.labels)} imgs",f"{len(dataset.labels[0])} boxes",dataset.labels[0][0])
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < n_names, 'Label class %g exceeds n_names=%g in %s. Possible class labels are 0-%g' % (mlc, n_names, opt.data, n_names - 1)
@@ -340,14 +344,15 @@ def train(hyp, opt, device, tb_writer=None):
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
-        mloss = torch.zeros(4, device=device)  # mean losses
+        mloss = torch.zeros(3+n_att, device=device)  # mean losses
         if rank != -1:
             dataloader.sampler.set_epoch(epoch)
         pbar = enumerate(dataloader)
-        logger.info(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'total', 'labels', 'img_size'))
+        logger.info(('\n' + '%10s' * (7+n_att)) % ('Epoch', 'gpu_mem', 'box', 'obj', *cls_att, 'total', 'labels', 'img_size'))
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
+
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -377,7 +382,8 @@ def train(hyp, opt, device, tb_writer=None):
                 pred = model(imgs)  # forward
                 #print("\nout here")
                 #print(pred[0][0].size())
-                #print(pred[1][0].size())
+                print("\npred",pred[1][0].size(),pred[1][0][0][0][0][0])
+                print("\ntarget",targets.size(),targets[0])
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs)  # loss scaled by batch_size
                 else:
@@ -402,7 +408,7 @@ def train(hyp, opt, device, tb_writer=None):
             if rank in [-1, 0]:
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                 mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                s = ('%10s' * 2 + '%10.4g' * 6) % (
+                s = ('%10s' * 2 + '%10.4g' * (5+n_att)) % (
                     '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
                 pbar.set_description(s)
 
