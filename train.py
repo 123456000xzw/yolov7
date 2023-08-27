@@ -244,6 +244,8 @@ def train(hyp, opt, device, tb_writer=None):
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
     imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
 
+    #print("\nimg size",imgsz,imgsz_test)
+
     # DP mode
     if cuda and rank == -1 and torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
@@ -258,18 +260,42 @@ def train(hyp, opt, device, tb_writer=None):
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
-    print("dataset",f"{len(dataset.labels)} imgs",f"{len(dataset.labels[0])} boxes",dataset.labels[0][0])
+    
+    """
+    for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader)):
+        print("\nWei trainloader",len(img),img[0].size())
+    """
+    #print("dataset",f"{len(dataset.labels)} imgs",f"{len(dataset.labels[0])} boxes",dataset.labels[0][0])
+
+    # Model parameters
+    hyp['box'] *= 3. / nl  # scale to layers
+    hyp['cls'] *= n_names / 80. * 3. / nl  # scale to classes and layers
+    hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
+    hyp['label_smoothing'] = opt.label_smoothing
+
+    model.n_names = n_names  # attach number of classes to model
+    model.hyp = hyp  # attach hyperparameters to model
+    model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
+    model.class_weights = labels_to_class_weights(dataset.labels, n_names).to(device) * n_names  # attach class weights
+    model.names = names
+    model.colors_att=colors_att
+
+    #ema.update(model)
+
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < n_names, 'Label class %g exceeds n_names=%g in %s. Possible class labels are 0-%g' % (mlc, n_names, opt.data, n_names - 1)
 
     # Process 0
     if rank in [-1, 0]:
-        testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
-                                       hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
+        testloader = create_dataloader(test_path, imgsz_test, batch_size, gs, opt,
+                                       hyp=hyp, cache=opt.cache_images and not opt.notest, rect=False, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
                                        pad=0.5, prefix=colorstr('val: '))[0]
-
+        """
+        for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(testloader)):
+            print("\nWei testloader",len(img),img[0].size())
+        """
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
             c = torch.tensor(labels[:, 0])  # classes
@@ -291,17 +317,6 @@ def train(hyp, opt, device, tb_writer=None):
                     # nn.MultiheadAttention incompatibility with DDP https://github.com/pytorch/pytorch/issues/26698
                     find_unused_parameters=any(isinstance(layer, nn.MultiheadAttention) for layer in model.modules()))
 
-    # Model parameters
-    hyp['box'] *= 3. / nl  # scale to layers
-    hyp['cls'] *= n_names / 80. * 3. / nl  # scale to classes and layers
-    hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
-    hyp['label_smoothing'] = opt.label_smoothing
-    model.n_names = n_names  # attach number of classes to model
-    model.hyp = hyp  # attach hyperparameters to model
-    model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
-    model.class_weights = labels_to_class_weights(dataset.labels, n_names).to(device) * n_names  # attach class weights
-    model.names = names
-    model.colors_att=colors_att
 
     # Start training
     t0 = time.time()
@@ -323,6 +338,7 @@ def train(hyp, opt, device, tb_writer=None):
     gc.collect()
     torch.cuda.empty_cache()
     """
+    weiImg=None
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
 
@@ -379,11 +395,13 @@ def train(hyp, opt, device, tb_writer=None):
             #print("\nlet us forward")
             # Forward
             with amp.autocast(enabled=cuda):
+                #print("\n",len(imgs),imgs[0].size())
                 pred = model(imgs)  # forward
                 #print("\nout here")
                 #print(pred[0][0].size())
-                print("\npred",pred[1][0].size(),pred[1][0][0][0][0][0])
-                print("\ntarget",targets.size(),targets[0])
+                #print("\npred",pred[1][0].size())
+                weiImg=imgs
+                #print("\ntarget",targets.size(),targets[0])
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs)  # loss scaled by batch_size
                 else:
@@ -434,9 +452,16 @@ def train(hyp, opt, device, tb_writer=None):
         if rank in [-1, 0]:
             # mAP
             ema.update_attr(model, include=['yaml', 'n_names', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
+            #ema.update(model)
+            #print(ema.ema.names)
             final_epoch = epoch + 1 == epochs
             if not opt.notest or final_epoch:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
+
+                print("\nweiImg",len(weiImg),weiImg[0].size())
+                weimodelout = model(weiImg)  # forward
+                print("\nweiout",weimodelout[1][0].size())
+
                 results, maps, times = test.test(data_dict,
                                                  batch_size=batch_size * 2,
                                                  imgsz=imgsz_test,

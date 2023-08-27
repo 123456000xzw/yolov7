@@ -15,7 +15,7 @@ from utils.general import coco80_to_coco91_class, check_dataset, check_file, che
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
-from utils.torch_utils import select_device, time_synchronized, TracedModel
+from utils.torch_utils import select_device, time_synchronized, TracedModel,is_parallel
 
 n_att=2
 
@@ -70,6 +70,7 @@ def test(data,
 
     # Configure
     model.eval()
+    #model.train()
     if isinstance(data, str):
         is_coco = data.endswith('coco.yaml')
         with open(data) as f:
@@ -96,11 +97,11 @@ def test(data,
     
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=n_classes_lis[0])
-    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    names = {k: v for k, v in enumerate(model.module.names if is_parallel(model) else model.names)}
     coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
-    loss = torch.zeros(3, device=device)
+    loss = torch.zeros(2+n_att, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
@@ -112,12 +113,14 @@ def test(data,
         with torch.no_grad():
             # Run model
             t = time_synchronized()
-            out, train_out = model(img, augment=augment)  # inference and training outputs
+            #print("\n",len(img),img[0].size())
+            out = train_out = model(img, augment=augment)  # inference and training outputs
             t0 += time_synchronized() - t
 
             # Compute loss
             if compute_loss:
-                loss += compute_loss([[xx.float() for xx in x] for x in train_out], targets)[1][:2+n_att]  # box, obj, cls
+                print("emaout",out[1][0].size())
+                loss += compute_loss(train_out, targets)[1][:2+n_att]  # box, obj, cls
 
             # Run NMS
             targets[:, 1+n_att:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels

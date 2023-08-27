@@ -728,6 +728,7 @@ class Model(nn.Module):
             return self.forward_once(x, profile)  # single-scale inference, train
 
     def forward_once(self, x, profile=False):
+        #print("\nforward_once")
         out=[]
         out_lis=len(self.model)-torch.tensor(list(range(1,n_att+1)))
         #print(out_lis)

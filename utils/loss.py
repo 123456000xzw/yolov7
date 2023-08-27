@@ -450,6 +450,7 @@ class ComputeLoss:
             setattr(self, k, getattr(det, k))
 
     def __call__(self, p, targets):  # predictions, targets, model
+       # print("loss",p[0][0].size())
         device = targets.device
         lcls, lbox, lobj = torch.zeros(n_att, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         tcls, tbox, indices, anchors = self.build_targets(p[0], targets)  # targets
@@ -534,7 +535,7 @@ class ComputeLoss:
 
         for i in range(self.nl):
             anchors = self.anchors[i]
-            print("\nComputeLossSame",p[0].shape)
+            #print("\nComputeLossSame build_targets",p[0].size())
             gain[1+n_att:5+n_att] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
@@ -850,7 +851,7 @@ class ComputeLossOTA:
 
         for i in range(self.nl):
             anchors = self.anchors[i]
-            print("\nOTASame",p[0].shape)
+            #print("\nOTASame",p[0].shape)
             gain[n_att+1:n_att+5] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
