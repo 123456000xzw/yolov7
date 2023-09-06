@@ -732,6 +732,7 @@ class Model(nn.Module):
         out=[]
         out_lis=len(self.model)-torch.tensor(list(range(1,n_att+1)))
         #print(out_lis)
+        #print(self.save)
         y, dt = [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
@@ -741,6 +742,7 @@ class Model(nn.Module):
                 self.traced=False
 
             if self.traced:
+                #print("\ntraced")
                 if isinstance(m, Detect) or isinstance(m, IDetect) or isinstance(m, IDetect_color) or isinstance(m, IAuxDetect) or isinstance(m, IKeypoint):
                     break
 
@@ -758,6 +760,9 @@ class Model(nn.Module):
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
             
+            #debug before detect-head
+            #if m.i==104:
+                #print(m.i,x.size())
             if m.i in out_lis:
                 out.append(x)
                 #print(m.i,x[0].size(),len(x))
@@ -766,7 +771,7 @@ class Model(nn.Module):
             print('%.1fms total' % sum(dt))
         
         #print("x,",x[0].size())
-        
+        #print(len(out),len(out[0]),out[0][0].size())
         return out
 
     def _initialize_biases(self, i=1,cf=None):  # initialize biases into Detect(), cf is class frequency
