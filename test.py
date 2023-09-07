@@ -141,9 +141,9 @@ def test(data,
             out_wei=out[0]
             for k in range(1,n_att):
                 out_wei=torch.cat([out_wei,out[k][...,5:]],len(out_wei.shape)-1)
-            #print(len(out_wei),out_wei.size())  
+            print(len(out_wei),out_wei.size())  
             out = non_max_suppression_MA(out_wei, conf_thres=conf_thres, iou_thres=iou_thres, labels=lb, multi_label=True)
-            #print(len(out),out[0].size(),out[0])
+            print(len(out),out[0].size(),out[0])
             t1 += time_synchronized() - t
         
             
@@ -161,7 +161,8 @@ def test(data,
                     for k in range(n_att):
                         stats[k].append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), [x[k] for x in tcls]))
                 continue
-
+            
+            print("\npred",len(pred),pred[0].size,pred[0])
             # Predictions
             predn = pred.clone()
             scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
@@ -234,7 +235,6 @@ def test(data,
 
             # Append statistics (correct, conf, pcls, tcls)
             for k in range(n_att):
-                print("\npred",len(pred),pred[0].size,pred[0])
                 stats[k].append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5+k].cpu(), [x[k] for x in tcls]))
 
         # Plot images
