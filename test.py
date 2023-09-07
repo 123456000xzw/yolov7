@@ -213,8 +213,8 @@ def test(data,
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
-                    ti = (cls == tcls_tensor).nonzero(as_tuple=False).view(-1)  # prediction indices
-                    pi = (cls == pred[:, 5:5+n_att]).nonzero(as_tuple=False).view(-1)  # target indices
+                    ti = (cls == tcls_tensor).nonzero(as_tuple=False).contiguous().view(-1)  # prediction indices
+                    pi = (cls == pred[:, 5:5+n_att]).nonzero(as_tuple=False).contiguous().view(-1)  # target indices
 
                     # Search for detections
                     if pi.shape[0]:
@@ -234,6 +234,7 @@ def test(data,
 
             # Append statistics (correct, conf, pcls, tcls)
             for k in range(n_att):
+                print("\npred",len(pred),pred[0].size,pred[0])
                 stats[k].append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5+k].cpu(), [x[k] for x in tcls]))
 
         # Plot images
