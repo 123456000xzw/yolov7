@@ -10,9 +10,11 @@ from numpy import random
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
-    scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path,non_max_suppression_MA
+    scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path,non_max_suppression_MA,non_max_suppression_MA2
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
+
+import pdb
 
 
 def detect(save_img=False):
@@ -32,11 +34,14 @@ def detect(save_img=False):
 
     # Load model
     model = attempt_load(weights, map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride
+    stride = int(model.stride[0].max())  # model stride
     imgsz = check_img_size(imgsz, s=stride)  # check img_size
 
-    if trace:
-        model = TracedModel(model, device, opt.img_size)
+    # pdb.set_trace()
+    # print(model)
+    # print(trace)
+    # if trace:
+    #     model = TracedModel(model, device, opt.img_size)
 
     if half:
         model.half()  # to FP16
@@ -91,17 +96,18 @@ def detect(save_img=False):
         # Inference
         t1 = time_synchronized()
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
-            pred = torch.Tensor([model(img, augment=opt.augment)[k] for k in range(n_att)]).detach() 
+            pred = model(img, augment=opt.augment)
         t2 = time_synchronized()
 
         # Apply NMS
         #pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+
         
-        pred_attributes=torch.rand(pred.size(0),pred.size(1),3).to(device)
+        #pred_attributes=torch.rand(pred.size(0),pred.size(1),3).to(device)
         #pred=torch.cat([pred,pred_attributes],dim=2)
-        print(pred.size())
+        print("\npred before NMS_MA",len(pred),pred[0].size())
         pred = non_max_suppression_MA(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-        print("After NMS_MA,",len(pred),pred[0].size())
+        print("\npred after NMS_MA,",len(pred),pred[0].size())
         t3 = time_synchronized()
 
         # Apply Classifier

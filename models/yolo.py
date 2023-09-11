@@ -771,8 +771,12 @@ class Model(nn.Module):
             print('%.1fms total' % sum(dt))
         
         #print("x,",x[0].size())
-        #print(len(out),len(out[0]),out[0][0].size())
-        return out
+        # print(len(out),len(out[0]),out[0][0].size(),len(out[0][1]))
+        # print(len(out),len(out[1]),out[1][0].size(),len(out[1][1]))
+        out_final=[out[0]]
+        for k in range(1,n_att):
+            out_final.append(out[k])
+        return out_final
 
     def _initialize_biases(self, i=1,cf=None):  # initialize biases into Detect(), cf is class frequency
         # https://arxiv.org/abs/1708.02002 section 3.3

@@ -340,7 +340,6 @@ def train(hyp, opt, device, tb_writer=None):
     gc.collect()
     torch.cuda.empty_cache()
     """
-    weiImg=None
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
 
@@ -401,7 +400,7 @@ def train(hyp, opt, device, tb_writer=None):
                 pred = model(imgs)  # forward
                 #print("\nout here")
                 #print(pred[0][0].size())
-                #print("\npred",pred[1][0].size())
+                #print("\npred",len(pred),len(pred[0]),pred[0][0].size())
                 #weiImg=imgs
                 #print("\ntarget",targets.size(),targets[0])
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:

@@ -97,7 +97,9 @@ def test(data,
     
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=n_classes_lis[0])
-    names_classes_lis = {k: v for k, v in enumerate(model.module.names_classes_lis if is_parallel(model) else model.names_classes_lis)}
+    names_classes_lis=[]
+    for kk in range(n_att):
+        names_classes_lis.append({k: v for k, v in enumerate(model.module.names_classes_lis[kk] if is_parallel(model) else model.names_classes_lis[kk])})
     coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., [0. for i in range(n_att)], [0. for i in range(n_att)], [0. for i in range(n_att)], [0. for i in range(n_att)], 0., 0.
@@ -138,12 +140,14 @@ def test(data,
             targets[:, 1+n_att:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
             lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
             t = time_synchronized()
+            """
             out_wei=out[0]
             for k in range(1,n_att):
-                out_wei=torch.cat([out_wei,out[k][...,5:]],len(out_wei.shape)-1)
-            print(len(out_wei),out_wei.size())  
-            out = non_max_suppression_MA(out_wei, conf_thres=conf_thres, iou_thres=iou_thres, labels=lb, multi_label=True)
-            print(len(out),out[0].size(),out[0])
+                out_wei=torch.cat([out_wei,out[k][...,5:]],-1)
+            """
+            #print(len(out_wei),out_wei.size())  
+            out = non_max_suppression_MA(out, conf_thres=conf_thres, iou_thres=iou_thres, labels=lb, multi_label=True)
+            #print(len(out),out[0].size(),out[0])
             t1 += time_synchronized() - t
         
             
@@ -152,7 +156,7 @@ def test(data,
             labels = targets[targets[:, 0] == si, 1:]
             nl = len(labels)
             tcls = labels[:, 0:n_att].tolist() if nl else []  # target class
-            #print(len(tcls),len(tcls[0]))
+            #print("\ntcls",len(tcls),len(tcls[0]))
             path = Path(paths[si])
             seen += 1
 
@@ -162,7 +166,7 @@ def test(data,
                         stats[k].append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), [x[k] for x in tcls]))
                 continue
             
-            print("\npred",len(pred),pred[0].size,pred[0])
+            #print("\npred",len(pred),pred[0])
             # Predictions
             predn = pred.clone()
             scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
@@ -210,7 +214,7 @@ def test(data,
                 tbox = xywh2xyxy(labels[:, n_att:4+n_att])
                 scale_coords(img[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
                 if plots:
-                    confusion_matrix.process_batch(predn, torch.cat((labels[:, 0:n_att], tbox), 1))
+                    confusion_matrix.process_batch(predn[:,:6], torch.cat((labels[:, 0:1], tbox), 1))
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
@@ -239,7 +243,7 @@ def test(data,
 
         # Plot images
         if plots and batch_i < 3:
-            f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
+            f = save_dir / f'test_batch{batch_i}_labels.jpg'  # 
             Thread(target=plot_images, args=(img, targets, paths, f, names_classes_lis), daemon=True).start()
             f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names_classes_lis), daemon=True).start()
@@ -250,11 +254,13 @@ def test(data,
         #print("\nstats",len(stats),len(stats[0]),stats[0])
         each_stats = [np.concatenate(x, 0) for x in zip(*(stats[k]))]  # to numpy
         if len(each_stats) and each_stats[0].any():
+            print("\neach_status true")
             p, r, ap[k], f1, ap_class[k] = ap_per_class(*each_stats, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names_classes_lis[k])
             ap50, ap[k] = ap[k][:, 0], ap[k].mean(1)  # AP@0.5, AP@0.5:0.95
             mp[k], mr[k], map50[k], map[k] = p.mean(), r.mean(), ap50.mean(), ap[k].mean()
             nt = np.bincount(each_stats[3].astype(np.int64), minlength=n_classes_lis[k])  # number of targets per class
         else:
+            print("\neach_status false")
             nt = torch.zeros(1)
         #print(k,len(ap_class),len(ap_class[0]),ap_class[0])
         # Print results
