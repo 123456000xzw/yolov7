@@ -138,16 +138,16 @@ def test(data,
 
             # Run NMS
             targets[:, 1+n_att:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
-            lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
+            lb = [torch.cat([targets[targets[:, 0] == i, 1:2],targets[targets[:, 0] == i,1+n_att:]],-1) for i in range(nb)] if save_hybrid else []  # for autolabelling
             t = time_synchronized()
             """
             out_wei=out[0]
             for k in range(1,n_att):
                 out_wei=torch.cat([out_wei,out[k][...,5:]],-1)
             """
-            #print(len(out_wei),out_wei.size())  
+            print(len(out),out[0].size())  
             out = non_max_suppression_MA(out, conf_thres=conf_thres, iou_thres=iou_thres, labels=lb, multi_label=True)
-            #print(len(out),out[0].size(),out[0])
+            print(len(out),out[0].size())
             t1 += time_synchronized() - t
         
             
@@ -289,7 +289,7 @@ def test(data,
     # Save JSON
     if save_json and len(jdict):
         w = Path(weights[0] if isinstance(weights, list) else weights).stem if weights is not None else ''  # weights
-        anno_json = './coco/annotations/instances_val2017.json'  # annotations json
+        anno_json = './datasets/coco/annotations/instances_val2017.json'  # annotations json
         pred_json = str(save_dir / f"{w}_predictions.json")  # predictions json
         print('\nEvaluating pycocotools mAP... saving %s...' % pred_json)
         with open(pred_json, 'w') as f:

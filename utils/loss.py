@@ -457,11 +457,11 @@ class ComputeLoss:
 
         # Losses
         #cls Losses
-        print("\ntarget",targets.size())
+        #print("\ntarget",targets.size())
         for k in range(n_att):
-            targets_att=torch.cat([targets.index_select(1,torch.tensor([0, k+1])),targets[:,1+n_att:]],-1)
+            targets_att=torch.cat([targets[:,0:1],targets[:,k+1:k+2],targets[:,1+n_att:]],-1)
             tcls, tbox, indices, anchors = self.build_targets(p[k], targets_att)
-
+            print("\nkk_tcls",len(tcls),tcls)
             for i, pi in enumerate(p[k]):  # layer index, layer predictions
                 b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
                 tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
@@ -476,8 +476,9 @@ class ComputeLoss:
                         #t[t==self.cp] = iou.detach().clamp(0).type(t.dtype)
                         lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
         #other Losses
-        targets_att=torch.cat([targets.index_select(1,torch.tensor([0, k+1])),targets[:,1+n_att:]],-1)
+        targets_att=torch.cat([targets[:,0:2],targets[:,1+n_att:]],-1)
         tcls, tbox, indices, anchors = self.build_targets(p[0], targets_att)
+        print("\n0_tcls",len(tcls),tcls)
         for i, pi in enumerate(p[0]):  # layer index, layer predictions
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
@@ -617,7 +618,8 @@ class ComputeLossOTA:
         #cls Losses
         #print("\ntarget",targets.size())
         for k in range(n_att):
-            targets_att=torch.cat([targets.index_select(1,torch.tensor([0, k+1])),targets[:,1+n_att:]],-1)
+            #print("\ntarget.device",targets.device)
+            targets_att=torch.cat([targets[:,0:1],targets[:,k+1:k+2],targets[:,1+n_att:]],-1)
             #print("\nhere",len(p[k]),p[k][0].size())
             #print("\nhere",targets_att.size())
             bs, as_, gjs, gis, targets_out, anchors = self.build_targets(p[k], targets_att, imgs,k)
@@ -637,7 +639,7 @@ class ComputeLossOTA:
                         lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
         
         #other Losses
-        targets_att=torch.cat([targets.index_select(1,torch.tensor([0, k+1])),targets[:,1+n_att:]],-1)
+        targets_att=torch.cat([targets[:,0:2],targets[:,1+n_att:]],-1)
         bs, as_, gjs, gis, targets_out, anchors = self.build_targets(p[0], targets_att, imgs,0)
         for i, pi in enumerate(p[0]):  # layer index, layer predictions
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx

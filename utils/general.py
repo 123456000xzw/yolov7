@@ -809,12 +809,15 @@ def non_max_suppression_MA2(prediction, conf_thres=0.25, iou_thres=0.45, classes
 def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,
                         labels=()):
     """Runs Non-Maximum Suppression (NMS) on inference results
-    prediction: [B, n, 5 + 80 + 3]
+    prediction: [
+                [B, n, 5+80],
+                [B, n, 5+3]
+                ]
 
     Returns:
          list of detections, on (n,6) tensor per image [xyxy, conf, cls]
     """
-    #print("\nNMS_MA")
+    print("\nNMS_MA")
     nc = prediction[0].shape[2] - 5  # number of classes
     xc = prediction[0][..., 4] > conf_thres  # candidates
 
@@ -829,7 +832,9 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
 
     t = time.time()
     output = [torch.zeros((0, 5+n_att), device=prediction[0].device)] * prediction[0].shape[0]
+    print("\nprediction[0]",prediction[0].size())
     for xi, x in enumerate(prediction[0]):  # image index, image inference
+        print("\nxi,x",xi,x.size())
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
         x = x[xc[xi]]  # confidence
@@ -843,6 +848,7 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
             v[range(len(l)), l[:, 0].long() + 5] = 1.0  # cls
             x = torch.cat((x, v), 0)
 
+        print("\n111")
         # If none remain process next image
         if not x.shape[0]:
             print("\nshape false")
@@ -866,10 +872,14 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
             conf, j = x[:, 5:].max(1, keepdim=True)
             x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
 
+        print("\n222")
+
         # Filter by class
         if classes is not None:
+            print("\nFilter by class before x",x.size())
             x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
-
+            print("\nFilter by class after x",x.size())
+    
         # Apply finite constraint
         # if not torch.isfinite(x).all():
         #     x = x[torch.isfinite(x).all(1)]
@@ -880,6 +890,7 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
             print("\nno boxes")
             continue
         elif n > max_nms:  # excess boxes
+            print("\nn>max_nms")
             x = x[x[:, 4].argsort(descending=True)[:max_nms]]  # sort by confidence
 
         # Batched NMS
@@ -895,12 +906,23 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
             x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
             if redundant:
                 i = i[iou.sum(1) > 1]  # require redundancy
-
-        output[xi,:6] = x[i]
+        
+        print("\n333")
+        
+        indexes=torch.zeros((len(i), 0), device=prediction[0].device)
+        print("\ni,x[i]",i.size(),x[i].size())
+        #output[xi]=x[i]
+        
         for k in range(1,n_att):
-            att_item = prediction[k][i][...,-(n_classes_lis[k]):]
-            _,indexes=att_item.max(1, keepdim=True)
-            output[xi,4+n_att]=indexes
+            att_item = prediction[k][xi][i][:,-(n_classes_lis[k]):]
+            print("\nitem",att_item.size())
+            _,indexes_att=att_item.max(1, keepdim=True)
+            print(indexes.size(),indexes_att.size())
+            indexes=torch.cat([indexes,indexes_att],-1)
+        print("\nindexes",indexes.size())
+        output[xi] = torch.cat([x[i],indexes],-1)
+        
+       
 
         if (time.time() - t) > time_limit:
             print(f'WARNING: NMS time limit {time_limit}s exceeded')
