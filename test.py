@@ -138,16 +138,16 @@ def test(data,
 
             # Run NMS
             targets[:, 1+n_att:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
-            lb = [torch.cat([targets[targets[:, 0] == i, 1:2],targets[targets[:, 0] == i,1+n_att:]],-1) for i in range(nb)] if save_hybrid else []  # for autolabelling
+            lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
             t = time_synchronized()
             """
             out_wei=out[0]
             for k in range(1,n_att):
                 out_wei=torch.cat([out_wei,out[k][...,5:]],-1)
             """
-            print(len(out),out[0].size())  
+            #print(len(out),out[0].size())  
             out = non_max_suppression_MA(out, conf_thres=conf_thres, iou_thres=iou_thres, labels=lb, multi_label=True)
-            print(len(out),out[0].size())
+            #print(len(out),out[0].size())
             t1 += time_synchronized() - t
         
             
@@ -208,7 +208,7 @@ def test(data,
             correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
             if nl:
                 detected = []  # target indices
-                tcls_tensor = labels[:, 0:n_att]
+                tcls_tensor = labels[:, 0]
 
                 # target boxes
                 tbox = xywh2xyxy(labels[:, n_att:4+n_att])
@@ -219,7 +219,7 @@ def test(data,
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
                     ti = (cls == tcls_tensor).nonzero(as_tuple=False).contiguous().view(-1)  # prediction indices
-                    pi = (cls == pred[:, 5:5+n_att]).nonzero(as_tuple=False).contiguous().view(-1)  # target indices
+                    pi = (cls == pred[:, 5]).nonzero(as_tuple=False).contiguous().view(-1)  # target indices
 
                     # Search for detections
                     if pi.shape[0]:
@@ -254,13 +254,13 @@ def test(data,
         #print("\nstats",len(stats),len(stats[0]),stats[0])
         each_stats = [np.concatenate(x, 0) for x in zip(*(stats[k]))]  # to numpy
         if len(each_stats) and each_stats[0].any():
-            print("\neach_status true")
+            #print("\neach_status true")
             p, r, ap[k], f1, ap_class[k] = ap_per_class(*each_stats, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names_classes_lis[k])
             ap50, ap[k] = ap[k][:, 0], ap[k].mean(1)  # AP@0.5, AP@0.5:0.95
             mp[k], mr[k], map50[k], map[k] = p.mean(), r.mean(), ap50.mean(), ap[k].mean()
             nt = np.bincount(each_stats[3].astype(np.int64), minlength=n_classes_lis[k])  # number of targets per class
         else:
-            print("\neach_status false")
+            #print("\neach_status false")
             nt = torch.zeros(1)
         #print(k,len(ap_class),len(ap_class[0]),ap_class[0])
         # Print results

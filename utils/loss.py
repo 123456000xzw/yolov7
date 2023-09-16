@@ -461,7 +461,7 @@ class ComputeLoss:
         for k in range(n_att):
             targets_att=torch.cat([targets[:,0:1],targets[:,k+1:k+2],targets[:,1+n_att:]],-1)
             tcls, tbox, indices, anchors = self.build_targets(p[k], targets_att)
-            print("\nkk_tcls",len(tcls),tcls)
+            #print("\nkk_tcls",len(tcls),tcls)
             for i, pi in enumerate(p[k]):  # layer index, layer predictions
                 b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
                 tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
@@ -478,7 +478,7 @@ class ComputeLoss:
         #other Losses
         targets_att=torch.cat([targets[:,0:2],targets[:,1+n_att:]],-1)
         tcls, tbox, indices, anchors = self.build_targets(p[0], targets_att)
-        print("\n0_tcls",len(tcls),tcls)
+        #print("\n0_tcls",len(tcls),tcls)
         for i, pi in enumerate(p[0]):  # layer index, layer predictions
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
@@ -839,12 +839,12 @@ class ComputeLossOTA:
                 matching_targets[i] = torch.cat(matching_targets[i], dim=0)
                 matching_anchs[i] = torch.cat(matching_anchs[i], dim=0)
             else:
-                matching_bs[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
-                matching_as[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
-                matching_gjs[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
-                matching_gis[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
-                matching_targets[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
-                matching_anchs[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
+                matching_bs[i] = torch.tensor([], device=device, dtype=torch.int64)
+                matching_as[i] = torch.tensor([], device=device, dtype=torch.int64)
+                matching_gjs[i] = torch.tensor([], device=device, dtype=torch.int64)
+                matching_gis[i] = torch.tensor([], device=device, dtype=torch.int64)
+                matching_targets[i] = torch.tensor([], device=device, dtype=torch.int64)
+                matching_anchs[i] = torch.tensor([], device=device, dtype=torch.int64)
 
         return matching_bs, matching_as, matching_gjs, matching_gis, matching_targets, matching_anchs
 
