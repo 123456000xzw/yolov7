@@ -132,8 +132,8 @@ def test(data,
             if compute_loss:
                 #print("emaout",len(out[1]),out[1][0].size())
                 pred=[]
-                for i in range(n_att):
-                    pred.append([x.float() for x in train_out[i]])
+                for k in range(n_att):
+                    pred.append([x.float() for x in train_out[k]])
                 loss += compute_loss(pred, targets)[1][:2+n_att]  # box, obj, cls
 
             # Run NMS
@@ -174,22 +174,25 @@ def test(data,
             # Append to text file
             if save_txt:
                 gn = torch.tensor(shapes[si][0])[[1, 0, 1, 0]]  # normalization gain whwh
-                for *xyxy, conf, cls in predn.tolist():
+                for x1,y1,x2,y2, conf, *cls in predn.tolist():
+                    xyxy=[x1,y1,x2,y2]
                     xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                    line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+                    line = (*cls, *xywh, conf) if save_conf else (*cls, *xywh)  # label format
                     with open(save_dir / 'labels' / (path.stem + '.txt'), 'a') as f:
                         f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
             # W&B logging - Media Panel Plots
             if len(wandb_images) < log_imgs and wandb_logger.current_epoch > 0:  # Check for test operation
                 if wandb_logger.current_epoch % wandb_logger.bbox_interval == 0:
-                    box_data = [{"position": {"minX": xyxy[0], "minY": xyxy[1], "maxX": xyxy[2], "maxY": xyxy[3]},
-                                 "class_id": int(cls),
-                                 "box_caption": "%s %.3f" % (names_classes_lis[0][cls], conf),
-                                 "scores": {"class_score": conf},
-                                 "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
-                    boxes = {"predictions": {"box_data": box_data, "class_labels":names_classes_lis}}  # inference-space
-                    wandb_images.append(wandb_logger.wandb.Image(img[si], boxes=boxes, caption=path.name))
+                    for k in range(n_att):
+                        box_data = [{"position": {"minX": x1, "minY": y1, "maxX": x2, "maxY": y2},
+                                    "class_id": int(cls[k]),
+                                    "box_caption": "%s %.3f" % (names_classes_lis[k][cls[k]], conf),
+                                    "scores": {"class_score": conf},
+                                    "domain": "pixel"} for x1,y1,x2,y2, conf, *cls in pred.tolist()]
+                        boxes = {"predictions": {"box_data": box_data, "class_labels":names_classes_lis[k]}}  # inference-space
+                        wandb_images.append(wandb_logger.wandb.Image(img[si], boxes=boxes, caption=path.name))
+
             wandb_logger.log_training_progress(predn, path, names_classes_lis) if wandb_logger and wandb_logger.wandb_run else None
 
             # Append to pycocotools JSON dictionary

@@ -96,7 +96,11 @@ def detect(save_img=False):
         # Inference
         t1 = time_synchronized()
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
-            pred = model(img, augment=opt.augment)[0]
+            pred,train_out=[],[]
+            for k in range(n_att):
+                each_out,each_train_out = model(img, augment=opt.augment)[k]  # inference and training outputs
+                pred.append(each_out)
+                #train_out.append(each_train_out)
         t2 = time_synchronized()
 
         # Apply NMS
@@ -105,9 +109,9 @@ def detect(save_img=False):
         
         #pred_attributes=torch.rand(pred.size(0),pred.size(1),3).to(device)
         #pred=torch.cat([pred,pred_attributes],dim=2)
-        print("\npred before NMS_MA",len(pred),pred[0].size())
+        print("\npred before NMS_MA",len(pred),pred[1].size())
         pred = non_max_suppression_MA(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-        print("\npred after NMS_MA,",len(pred),pred[0].size())
+        print("\npred after NMS_MA,",len(pred),len(pred[0]))
         t3 = time_synchronized()
 
         # Apply Classifier
