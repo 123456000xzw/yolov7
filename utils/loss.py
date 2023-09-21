@@ -499,7 +499,7 @@ class ComputeLoss:
                 
                 """
                 # Classification
-                if self.n_names > 1:  # cls loss (only if multiple classes)
+                if self.n_classes > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
                     t[range(n), tcls[i]] = self.cp
                     #t[t==self.cp] = iou.detach().clamp(0).type(t.dtype)
@@ -666,7 +666,7 @@ class ComputeLossOTA:
                 """
                 # Classification
                 selected_tcls = targets[i][:, 1].long()
-                if self.n_names > 1:  # cls loss (only if multiple classes)
+                if self.n_classes > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
@@ -980,7 +980,7 @@ class ComputeLossBinOTA:
         self.balance = {3: [4.0, 1.0, 0.4]}.get(det.nl, [4.0, 1.0, 0.25, 0.06, .02])  # P3-P7
         self.ssi = list(det.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, model.gr, h, autobalance
-        for k in 'na', 'n_names', 'nl', 'anchors', 'stride', 'bin_count':
+        for k in 'na', 'n_classes_lis', 'nl', 'anchors', 'stride', 'bin_count':
             setattr(self, k, getattr(det, k))
 
         #xy_bin_sigmoid = SigmoidBin(bin_count=11, min=-0.5, max=1.5, use_loss_regression=False).to(device)
@@ -1044,7 +1044,7 @@ class ComputeLossBinOTA:
 
                 # Classification
                 selected_tcls = targets[i][:, 1].long()
-                if self.n_names > 1:  # cls loss (only if multiple classes)
+                if self.n_classes_lis[0] > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, (1+obj_idx):], self.cn, device=device)  # targets
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, (1+obj_idx):], t)  # BCE
@@ -1153,7 +1153,7 @@ class ComputeLossBinOTA:
             dynamic_ks = torch.clamp(top_k.sum(1).int(), min=1)
 
             gt_cls_per_image = (
-                F.one_hot(this_target[:, 1].to(torch.int64), self.n_names)
+                F.one_hot(this_target[:, 1].to(torch.int64), self.n_classes)
                 .float()
                 .unsqueeze(1)
                 .repeat(1, pxyxys.shape[0], 1)
@@ -1306,7 +1306,7 @@ class ComputeLossAuxOTA:
         self.balance = {3: [4.0, 1.0, 0.4]}.get(det.nl, [4.0, 1.0, 0.25, 0.06, .02])  # P3-P7
         self.ssi = list(det.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, model.gr, h, autobalance
-        for k in 'na', 'n_names', 'nl', 'anchors', 'stride':
+        for k in 'na', 'n_classes_lis', 'nl', 'anchors', 'stride':
             setattr(self, k, getattr(det, k))
 
     def __call__(self, p, targets, imgs):  # predictions, targets, model   
@@ -1346,7 +1346,7 @@ class ComputeLossAuxOTA:
 
                 # Classification
                 selected_tcls = targets[i][:, 1].long()
-                if self.n_names > 1:  # cls loss (only if multiple classes)
+                if self.n_classes > 1:  # cls loss (only if multiple classes)
                     t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
@@ -1373,7 +1373,7 @@ class ComputeLossAuxOTA:
 
                 # Classification
                 selected_tcls_aux = targets_aux[i][:, 1].long()
-                if self.n_names > 1:  # cls loss (only if multiple classes)
+                if self.n_classes_lis[0] > 1:  # cls loss (only if multiple classes)
                     t_aux = torch.full_like(ps_aux[:, 5:], self.cn, device=device)  # targets
                     t_aux[range(n_aux), selected_tcls_aux] = self.cp
                     lcls += 0.25 * self.BCEcls(ps_aux[:, 5:], t_aux)  # BCE
@@ -1471,7 +1471,7 @@ class ComputeLossAuxOTA:
             dynamic_ks = torch.clamp(top_k.sum(1).int(), min=1)
 
             gt_cls_per_image = (
-                F.one_hot(this_target[:, 1].to(torch.int64), self.n_names)
+                F.one_hot(this_target[:, 1].to(torch.int64), self.n_classes_lis[0])
                 .float()
                 .unsqueeze(1)
                 .repeat(1, pxyxys.shape[0], 1)
@@ -1624,7 +1624,7 @@ class ComputeLossAuxOTA:
             dynamic_ks = torch.clamp(top_k.sum(1).int(), min=1)
 
             gt_cls_per_image = (
-                F.one_hot(this_target[:, 1].to(torch.int64), self.n_names)
+                F.one_hot(this_target[:, 1].to(torch.int64), self.n_classes_lis[0])
                 .float()
                 .unsqueeze(1)
                 .repeat(1, pxyxys.shape[0], 1)

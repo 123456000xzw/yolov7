@@ -57,7 +57,7 @@ def test(data,
 
         # Load model
         model = attempt_load(weights, map_location=device)  # load FP32 model
-        gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+        gs = max(int(model.stride[0].max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
         
         if trace:
@@ -76,7 +76,7 @@ def test(data,
         with open(data) as f:
             data = yaml.load(f, Loader=yaml.SafeLoader)
     check_dataset(data)  # check
-    n_classes_lis = [1 for i in range(n_att)] if single_cls else data['n_classes_lis']  # number of classes
+    
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
@@ -96,7 +96,7 @@ def test(data,
         print("Testing with YOLOv5 AP metric...")
     
     seen = 0
-    confusion_matrix = ConfusionMatrix(nc=n_classes_lis[0])
+    confusion_matrix = [ConfusionMatrix(nc=model.n_classes_lis[k]) for k in range(n_att)]
     names_classes_lis=[]
     for kk in range(n_att):
         names_classes_lis.append({k: v for k, v in enumerate(model.module.names_classes_lis[kk] if is_parallel(model) else model.names_classes_lis[kk])})
@@ -203,7 +203,7 @@ def test(data,
                 box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
                 for p, b in zip(pred.tolist(), box.tolist()):
                     jdict.append({'image_id': image_id,
-                                  'category_id': coco91class[int(p[5])] if is_coco else int(p[5]),
+                                  'category_id': coco91class[int(p[5:5+n_att])] if is_coco else int(p[5:5+n_att]),
                                   'bbox': [round(x, 3) for x in b],
                                   'score': round(p[4], 5)})
 
@@ -217,7 +217,10 @@ def test(data,
                 tbox = xywh2xyxy(labels[:, n_att:4+n_att])
                 scale_coords(img[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
                 if plots:
-                    confusion_matrix.process_batch(predn[:,:6], torch.cat((labels[:, 0:1], tbox), 1))
+                    for k in range(n_att):
+                        confusion_pred=torch.cat((pred[:,:5],pred[:,5+k]),-1)
+                        confusion_label=torch.cat((labels[:,k],tbox),-1)
+                        confusion_matrix[k].process_batch(confusion_pred, confusion_label)
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
@@ -261,7 +264,7 @@ def test(data,
             p, r, ap[k], f1, ap_class[k] = ap_per_class(*each_stats, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names_classes_lis[k])
             ap50, ap[k] = ap[k][:, 0], ap[k].mean(1)  # AP@0.5, AP@0.5:0.95
             mp[k], mr[k], map50[k], map[k] = p.mean(), r.mean(), ap50.mean(), ap[k].mean()
-            nt = np.bincount(each_stats[3].astype(np.int64), minlength=n_classes_lis[k])  # number of targets per class
+            nt = np.bincount(each_stats[3].astype(np.int64), minlength=model.n_classes_lis[k])  # number of targets per class
         else:
             #print("\neach_status false")
             nt = torch.zeros(1)
@@ -271,7 +274,7 @@ def test(data,
         print(pf % ('all', seen, nt.sum(), mp[k], mr[k], map50[k], map[k]))
 
         # Print results per class
-        if (verbose or (n_classes_lis[k] < 50 and not training)) and n_classes_lis[k] > 1 and len(each_stats):
+        if (verbose or (model.n_classes_lis[k] < 50 and not training)) and model.n_classes_lis[k] > 1 and len(each_stats):
             for i, c in enumerate(ap_class[k]):
                 print(pf % (names_classes_lis[k][c], seen, nt[c], p[i], r[i], ap50[i], ap[k][i]))
 
@@ -282,10 +285,11 @@ def test(data,
 
     # Plots
     if plots:
-        confusion_matrix.plot(save_dir=save_dir, names=list(names_classes_lis[0].values()))
-        if wandb_logger and wandb_logger.wandb:
-            val_batches = [wandb_logger.wandb.Image(str(f), caption=f.name) for f in sorted(save_dir.glob('test*.jpg'))]
-            wandb_logger.log({"Validation": val_batches})
+        for k in range(n_att):
+            confusion_matrix[k].plot(save_dir=save_dir, names=list(names_classes_lis[k].values()))
+            if wandb_logger and wandb_logger.wandb:
+                val_batches = [wandb_logger.wandb.Image(str(f), caption=f.name) for f in sorted(save_dir.glob('test*.jpg'))]
+                wandb_logger.log({"Validation": val_batches})
     if wandb_images:
         wandb_logger.log({"Bounding Box Debugger/Images": wandb_images})
 
@@ -322,7 +326,7 @@ def test(data,
     
     maps=[]
     for k in range(n_att):
-        maps.append(np.zeros(n_classes_lis[k]) + map[k])
+        maps.append(np.zeros(model.n_classes_lis[k]) + map[k])
         #print(len(ap_class),len(ap_class[0]))
         for i, c in enumerate(ap_class[k]):
             maps[k][c] = ap[k][i]

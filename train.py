@@ -69,11 +69,10 @@ def train(hyp, opt, device, tb_writer=None):
     plots = not opt.evolve  # create plots
     cuda = device.type != 'cpu'
     init_seeds(2 + rank)
-    with open(opt.data) as f:
+    with open(opt.data,encoding='utf-8') as f:
         data_dict = yaml.load(f, Loader=yaml.SafeLoader)  # data dict
     is_coco = opt.data.endswith('coco.yaml')
 
-    
     # Logging- Doing this before checking the dataset. Might update data_dict
     loggers = {'wandb': None}  # loggers dict
     if rank in [-1, 0]:
@@ -84,15 +83,6 @@ def train(hyp, opt, device, tb_writer=None):
         data_dict = wandb_logger.data_dict
         if wandb_logger.wandb:
             weights, epochs, hyp = opt.weights, opt.epochs, opt.hyp  # WandbLogger might update weights, epochs if resuming
-    
-    #wei,88-95
-    n_names = 1 if opt.single_cls else int(data_dict['n_names'])  # number of classes
-    names = ['item'] if opt.single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
-    assert len(names) == n_names, '%g names found for n_names=%g dataset in %s' % (len(names), n_names, opt.data)  # check
-
-    colors_att=data_dict['colors_att']
-    names_classes_lis=[names,colors_att]
-    cls_att=data_dict['name_att']
 
     # Model
     pretrained = weights.endswith('.pt')
@@ -100,7 +90,7 @@ def train(hyp, opt, device, tb_writer=None):
         with torch_distributed_zero_first(rank):
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, n_names=n_names, anchors=hyp.get('anchors')).to(device)  # create
+        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
         state_dict = ckpt['model'].float().state_dict()  # to FP32
         state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
@@ -113,6 +103,10 @@ def train(hyp, opt, device, tb_writer=None):
         check_dataset(data_dict)  # check
     train_path = data_dict['train']
     test_path = data_dict['val']
+
+    model.names_classes_lis=data_dict['names_classes_lis']
+    model.name_att=data_dict['name_att']
+
 
     # Freeze
     freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # parameter names to freeze (full or partial)
@@ -270,27 +264,26 @@ def train(hyp, opt, device, tb_writer=None):
         print("\nWei trainloader",len(img),img[0].size())
     """
     #print("dataset",f"{len(dataset.labels)} imgs",f"{len(dataset.labels[0])} boxes",dataset.labels[0][0])
-
-    # Model parameters
-    hyp['box'] *= 3. / nl  # scale to layers
-    hyp['cls'] *= n_names / 80. * 3. / nl  # scale to classes and layers
-    hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
-    hyp['label_smoothing'] = opt.label_smoothing
-
-    model.n_names = n_names  # attach number of classes to model
-    model.hyp = hyp  # attach hyperparameters to model
-    model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
-    model.class_weights = labels_to_class_weights(dataset.labels, n_names).to(device) * n_names  # attach class weights
-    model.names = names
-    model.names_classes_lis=names_classes_lis
-    model.colors_att=colors_att
-
-    #ema.update(model)
-
-    mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
+    """
+    sizeflag1=0
+    sizeflag2=0
+    print("\nlabels.size",len(dataset.labels),len(dataset.labels[0]),len(dataset.labels[0][0]),dataset.labels[0])
+    for i in range(len(dataset.labels)):
+        label=dataset.labels[i]
+        if len(label)==0:
+            print("\nempty label",dataset.label_files[i])
+        if(len(label)==5):
+            sizeflag1=1
+        if(len(label[0])==5):
+            sizeflag2=1
+    print("\n",sizeflag1,sizeflag2)
+    """
+    mlc = [np.concatenate(dataset.labels, 0)[:, k].max() for k in range(n_att)] # max label class
     nb = len(dataloader)  # number of batches
-    assert mlc < n_names, 'Label class %g exceeds n_names=%g in %s. Possible class labels are 0-%g' % (mlc, n_names, opt.data, n_names - 1)
+    for k in range(n_att):
+        assert mlc[k] < model.n_classes_lis[k], 'Label class %g exceeds n_classes=%g in %s. Possible class labels are 0-%g' % (mlc[k], model.n_classes_lis[k], opt.data, model.n_classes_lis[k] - 1) 
 
+    
     # Process 0
     if rank in [-1, 0]:
         testloader = create_dataloader(test_path, imgsz_test, batch_size*2, gs, opt,
@@ -303,13 +296,13 @@ def train(hyp, opt, device, tb_writer=None):
         """
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
-            c = torch.tensor(labels[:, 0])  # classes
-            # cf = torch.bincount(c.long(), minlength=n_names) + 1.  # frequency
+            c = [torch.tensor(labels[:, k]) for k in range(n_att)] # classes
+            # cf = torch.bincount(c.long(), minlength=n_classes) + 1.  # frequency
             # model._initialize_biases(cf.to(device))
             if plots:
                 #plot_labels(labels, names, save_dir, loggers)
                 if tb_writer:
-                    tb_writer.add_histogram('classes', c, 0)
+                    [tb_writer.add_histogram(model.name_att[k], c[k], 0) for k in range(n_att)]
 
             # Anchors
             if not opt.noautoanchor:
@@ -322,12 +315,24 @@ def train(hyp, opt, device, tb_writer=None):
                     # nn.MultiheadAttention incompatibility with DDP https://github.com/pytorch/pytorch/issues/26698
                     find_unused_parameters=any(isinstance(layer, nn.MultiheadAttention) for layer in model.modules()))
 
+    # Model parameters
+    hyp['box'] *= 3. / nl  # scale to layers
+    hyp['cls'] *= 3. / nl  # scale to classes and layers    #80
+    hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
+    hyp['label_smoothing'] = opt.label_smoothing
+
+    model.hyp = hyp  # attach hyperparameters to model
+    model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
+    #model.class_weights = labels_to_class_weights(dataset.labels, model.n_classes_lis[0]).to(device) * model.n_classes_lis[0]  # attach class weights
+    model.class_weights = [labels_to_class_weights(np.array(dataset.labels,dtype=np.float32)[...,k:k+1], model.n_classes_lis[k]).to(device)*model.n_classes_lis[k] for k in range(n_att)]  # attach class weights
+    #ema.update(model)
+
 
     # Start training
     t0 = time.time()
     nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations, max(3 epochs, 1k iterations)
     # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
-    maps = np.zeros(n_names)  # mAP per class
+    maps = [np.zeros(model.n_classes_lis[k]) for k in range(n_att)] # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
@@ -350,8 +355,8 @@ def train(hyp, opt, device, tb_writer=None):
         if opt.image_weights:
             # Generate indices
             if rank in [-1, 0]:
-                cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / n_names  # class weights
-                iw = labels_to_image_weights(dataset.labels, n_names=n_names, class_weights=cw)  # image weights
+                cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / model.n_classes_lis[0]  # class weights
+                iw = labels_to_image_weights(dataset.labels, n_classes=model.n_classes_lis[0], class_weights=cw)  # image weights
                 dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
             # Broadcast if DDP
             if rank != -1:
@@ -370,7 +375,7 @@ def train(hyp, opt, device, tb_writer=None):
             dataloader.sampler.set_epoch(epoch)
         pbar = enumerate(dataloader)
         #Wei,373
-        logger.info(('\n' + '%10s' * (7+n_att)) % ('Epoch', 'gpu_mem', 'box', 'obj', *cls_att, 'total', 'labels', 'img_size'))
+        logger.info(('\n' + '%10s' * (7+n_att)) % ('Epoch', 'gpu_mem', 'box', 'obj', *model.name_att, 'total', 'labels', 'img_size'))
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
@@ -460,7 +465,7 @@ def train(hyp, opt, device, tb_writer=None):
         if rank in [-1, 0]:
             # mAP
             #Wei,464
-            ema.update_attr(model, include=['yaml', 'n_classes_lis','n_names', 'hyp', 'gr', 'names', 'stride', 'class_weights','names_classes_lis'])
+            ema.update_attr(model, include=['yaml', 'n_classes_lis', 'hyp', 'gr', 'stride', 'class_weights','names_classes_lis'])
             #ema.update(model)
             #print(ema.ema.names)
             final_epoch = epoch + 1 == epochs
@@ -479,7 +484,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                  single_cls=opt.single_cls,
                                                  dataloader=testloader,
                                                  save_dir=save_dir,
-                                                 verbose=n_names < 50 and final_epoch,
+                                                 verbose=model.n_classes_lis[0] < 50 and final_epoch,
                                                  plots=plots and final_epoch,
                                                  wandb_logger=wandb_logger,
                                                  compute_loss=compute_loss,
@@ -555,7 +560,7 @@ def train(hyp, opt, device, tb_writer=None):
                                               if (save_dir / f).exists()]})
         # Test best.pt
         logger.info('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
-        if opt.data.endswith('coco.yaml') and n_names == 80:  # if COCO
+        if opt.data.endswith('coco.yaml') and model.n_classes_lis[0] == 80:  # if COCO
             for m in (last, best) if best.exists() else (last):  # speed, mAP tests
                 results, _, _ = test.test(opt.data,
                                           batch_size=batch_size * 2,
