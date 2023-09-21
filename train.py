@@ -323,8 +323,8 @@ def train(hyp, opt, device, tb_writer=None):
 
     model.hyp = hyp  # attach hyperparameters to model
     model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
-    #model.class_weights = labels_to_class_weights(dataset.labels, model.n_classes_lis[0]).to(device) * model.n_classes_lis[0]  # attach class weights
-    model.class_weights = [labels_to_class_weights(np.array(dataset.labels,dtype=np.float32)[...,k:k+1], model.n_classes_lis[k]).to(device)*model.n_classes_lis[k] for k in range(n_att)]  # attach class weights
+    model.class_weights = labels_to_class_weights(dataset.labels, model.n_classes_lis[0]).to(device) * model.n_classes_lis[0]  # attach class weights
+    #model.class_weights = [labels_to_class_weights(np.array(dataset.labels,dtype=np.float32)[...,k:k+1], model.n_classes_lis[k]).to(device)*model.n_classes_lis[k] for k in range(n_att)]  # attach class weights
     #ema.update(model)
 
 
