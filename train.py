@@ -104,8 +104,8 @@ def train(hyp, opt, device, tb_writer=None):
     train_path = data_dict['train']
     test_path = data_dict['val']
 
-    model.names_classes_lis=data_dict['names_classes_lis']
-    model.name_att=data_dict['name_att']
+    n_classes_lis=data_dict['n_classes_lis']
+    name_att=data_dict['name_att']
 
 
     # Freeze
@@ -281,7 +281,7 @@ def train(hyp, opt, device, tb_writer=None):
     mlc = [np.concatenate(dataset.labels, 0)[:, k].max() for k in range(n_att)] # max label class
     nb = len(dataloader)  # number of batches
     for k in range(n_att):
-        assert mlc[k] < model.n_classes_lis[k], 'Label class %g exceeds n_classes=%g in %s. Possible class labels are 0-%g' % (mlc[k], model.n_classes_lis[k], opt.data, model.n_classes_lis[k] - 1) 
+        assert mlc[k] < n_classes_lis[k], 'Label class %g exceeds n_classes=%g in %s. Possible class labels are 0-%g' % (mlc[k], n_classes_lis[k], opt.data, n_classes_lis[k] - 1) 
 
     
     # Process 0
@@ -302,7 +302,7 @@ def train(hyp, opt, device, tb_writer=None):
             if plots:
                 #plot_labels(labels, names, save_dir, loggers)
                 if tb_writer:
-                    [tb_writer.add_histogram(model.name_att[k], c[k], 0) for k in range(n_att)]
+                    [tb_writer.add_histogram(name_att[k], c[k], 0) for k in range(n_att)]
 
             # Anchors
             if not opt.noautoanchor:
@@ -323,8 +323,8 @@ def train(hyp, opt, device, tb_writer=None):
 
     model.hyp = hyp  # attach hyperparameters to model
     model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
-    model.class_weights = labels_to_class_weights(dataset.labels, model.n_classes_lis[0]).to(device) * model.n_classes_lis[0]  # attach class weights
-    #model.class_weights = [labels_to_class_weights(np.array(dataset.labels,dtype=np.float32)[...,k:k+1], model.n_classes_lis[k]).to(device)*model.n_classes_lis[k] for k in range(n_att)]  # attach class weights
+    model.class_weights = labels_to_class_weights(dataset.labels, n_classes_lis[0]).to(device) * n_classes_lis[0]  # attach class weights
+    #model.class_weights = [labels_to_class_weights(np.array(dataset.labels,dtype=np.float32)[...,k:k+1], n_classes_lis[k]).to(device)*n_classes_lis[k] for k in range(n_att)]  # attach class weights
     #ema.update(model)
 
 
@@ -332,12 +332,12 @@ def train(hyp, opt, device, tb_writer=None):
     t0 = time.time()
     nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations, max(3 epochs, 1k iterations)
     # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
-    maps = [np.zeros(model.n_classes_lis[k]) for k in range(n_att)] # mAP per class
+    maps = [np.zeros(n_classes_lis[k]) for k in range(n_att)] # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
-    compute_loss_ota = ComputeLossOTA(model)  # init loss class
-    compute_loss = ComputeLoss(model)  # init loss class
+    compute_loss_ota = ComputeLossOTA(model,n_classes_lis)  # init loss class
+    compute_loss = ComputeLoss(model,n_classes_lis)  # init loss class
     logger.info(f'Image sizes {imgsz} train, {imgsz_test} test\n'
                 f'Using {dataloader.num_workers} dataloader workers\n'
                 f'Logging results to {save_dir}\n'
@@ -355,8 +355,8 @@ def train(hyp, opt, device, tb_writer=None):
         if opt.image_weights:
             # Generate indices
             if rank in [-1, 0]:
-                cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / model.n_classes_lis[0]  # class weights
-                iw = labels_to_image_weights(dataset.labels, n_classes=model.n_classes_lis[0], class_weights=cw)  # image weights
+                cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / n_classes_lis[0]  # class weights
+                iw = labels_to_image_weights(dataset.labels, n_classes=n_classes_lis[0], class_weights=cw)  # image weights
                 dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
             # Broadcast if DDP
             if rank != -1:
@@ -375,7 +375,7 @@ def train(hyp, opt, device, tb_writer=None):
             dataloader.sampler.set_epoch(epoch)
         pbar = enumerate(dataloader)
         #Wei,373
-        logger.info(('\n' + '%10s' * (7+n_att)) % ('Epoch', 'gpu_mem', 'box', 'obj', *model.name_att, 'total', 'labels', 'img_size'))
+        logger.info(('\n' + '%10s' * (7+n_att)) % ('Epoch', 'gpu_mem', 'box', 'obj', *name_att, 'total', 'labels', 'img_size'))
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
@@ -465,7 +465,7 @@ def train(hyp, opt, device, tb_writer=None):
         if rank in [-1, 0]:
             # mAP
             #Wei,464
-            ema.update_attr(model, include=['yaml', 'n_classes_lis', 'hyp', 'gr', 'stride', 'class_weights','names_classes_lis'])
+            ema.update_attr(model, include=['yaml', 'n_classes_lis', 'hyp', 'gr', 'stride', 'class_weights'])
             #ema.update(model)
             #print(ema.ema.names)
             final_epoch = epoch + 1 == epochs
@@ -484,7 +484,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                  single_cls=opt.single_cls,
                                                  dataloader=testloader,
                                                  save_dir=save_dir,
-                                                 verbose=model.n_classes_lis[0] < 50 and final_epoch,
+                                                 verbose=n_classes_lis[0] < 50 and final_epoch,
                                                  plots=plots and final_epoch,
                                                  wandb_logger=wandb_logger,
                                                  compute_loss=compute_loss,
@@ -560,7 +560,7 @@ def train(hyp, opt, device, tb_writer=None):
                                               if (save_dir / f).exists()]})
         # Test best.pt
         logger.info('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
-        if opt.data.endswith('coco.yaml') and model.n_classes_lis[0] == 80:  # if COCO
+        if opt.data.endswith('coco.yaml') and n_classes_lis[0] == 80:  # if COCO
             for m in (last, best) if best.exists() else (last):  # speed, mAP tests
                 results, _, _ = test.test(opt.data,
                                           batch_size=batch_size * 2,

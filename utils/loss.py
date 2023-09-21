@@ -422,9 +422,9 @@ class APLoss(torch.autograd.Function):
 
 class ComputeLoss:
     # Compute losses
-    def __init__(self, model, autobalance=False):
+    def __init__(self, model, n_classes_lis,autobalance=False):
         super(ComputeLoss, self).__init__()
-        self.n_classes_lis=model.n_classes_lis
+        self.n_classes_lis=n_classes_lis
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters
 
@@ -582,9 +582,9 @@ class ComputeLoss:
 
 class ComputeLossOTA:
     # Compute losses
-    def __init__(self, model, autobalance=False):
+    def __init__(self, model, n_classes_lis,autobalance=False):
         super(ComputeLossOTA, self).__init__()
-        self.n_classes_lis=model.n_classes_lis
+        self.n_classes_lis=n_classes_lis
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters
 
