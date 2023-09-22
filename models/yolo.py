@@ -632,9 +632,8 @@ class Model(nn.Module):
                 self.yaml = yaml.load(f, Loader=yaml.SafeLoader)  # model dict
 
         # Define model
-        n_classes_lis=self.n_classes_lis=self.yaml['n_classes_lis'] = self.yaml.get('n_classes_lis',None)   
-        self.names_classes_lis=self.yaml['names_classes_lis']    
-
+        n_classes_lis=self.n_classes_lis=self.yaml['n_classes_lis'] = self.yaml.get('n_classes_lis',None)
+        
         #print("99",n_classes_lis)
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
         if n_classes_lis and n_classes_lis != self.yaml['n_classes_lis']:

@@ -104,6 +104,7 @@ def train(hyp, opt, device, tb_writer=None):
     train_path = data_dict['train']
     test_path = data_dict['val']
 
+    model.names_classes_lis=data_dict['names_classes_lis']
     n_classes_lis=data_dict['n_classes_lis']
     name_att=data_dict['name_att']
 
@@ -246,7 +247,7 @@ def train(hyp, opt, device, tb_writer=None):
 
     # DP mode
     if cuda and rank == -1 and torch.cuda.device_count() > 1:
-        model = torch.nn.DataParallel(model)
+        model = torch.nn.DataParallel(model,find_unused_parameters=True)
 
     # SyncBatchNorm
     if opt.sync_bn and cuda and rank != -1:
@@ -410,6 +411,10 @@ def train(hyp, opt, device, tb_writer=None):
             with amp.autocast(enabled=cuda):
                 #print("\n",len(imgs),imgs[0].size())
                 pred = model(imgs)  # forward
+
+                for name, param in model.named_parameters():
+                    if param.grad is None:
+                        print("\nno backward",name)
                 #print("\nout here")
                 #print(pred[0][0].size())
                 #print("\npred",len(pred),len(pred[0]),pred[0][0].size())
