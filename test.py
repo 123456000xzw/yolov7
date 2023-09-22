@@ -187,7 +187,7 @@ def test(data,
                     for k in range(n_att):
                         box_data = [{"position": {"minX": x1, "minY": y1, "maxX": x2, "maxY": y2},
                                     "class_id": int(cls[k]),
-                                    "box_caption": "%s %.3f" % (names_classes_lis[k][cls[k]], conf),
+                                    "box_caption": "%s %.3f" % (names_classes_lis[k][int(cls[k])], conf),
                                     "scores": {"class_score": conf},
                                     "domain": "pixel"} for x1,y1,x2,y2, conf, *cls in pred.tolist()]
                         boxes = {"predictions": {"box_data": box_data, "class_labels":names_classes_lis[k]}}  # inference-space
