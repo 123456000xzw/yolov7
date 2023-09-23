@@ -24,6 +24,7 @@ from utils.metrics import fitness
 # Settings
 matplotlib.rc('font', **{'size': 11})
 matplotlib.use('Agg')  # for writing to files only
+n_att=2
 
 
 def color_list():
@@ -114,7 +115,7 @@ def output_to_target(output):
 
 def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=640, max_subplots=16):
     # Plot image grid with labels
-
+    
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
     if isinstance(targets, torch.Tensor):
@@ -152,10 +153,10 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
         mosaic[block_y:block_y + h, block_x:block_x + w, :] = img
         if len(targets) > 0:
             image_targets = targets[targets[:, 0] == i]
-            boxes = xywh2xyxy(image_targets[:, 2:6]).T
-            classes = image_targets[:, 1].astype('int')
-            labels = image_targets.shape[1] == 6  # labels if no conf column
-            conf = None if labels else image_targets[:, 6]  # check for confidence presence (label vs pred)
+            boxes = xywh2xyxy(image_targets[:, 1+n_att:5+n_att]).T
+            classes = image_targets[:, 1:1+n_att].astype('int')
+            labels = image_targets.shape[1] == (5+n_att)  # labels if no conf column
+            conf = None if labels else image_targets[:, 5+n_att]  # check for confidence presence (label vs pred)
 
             if boxes.shape[1]:
                 if boxes.max() <= 1.01:  # if normalized with tolerance 0.01
@@ -166,9 +167,9 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
             boxes[[0, 2]] += block_x
             boxes[[1, 3]] += block_y
             for j, box in enumerate(boxes.T):
-                cls = int(classes[j])
-                color = colors[cls % len(colors)]
-                cls = names[cls] if names else cls
+                cls = [int(classes[j][k]) for k in range(n_att)]
+                color = colors[sum(cls) % len(colors)]
+                cls = [names[k][cls[k]] if names else cls[k] for k in range(n_att)]
                 if labels or conf[j] > 0.25:  # 0.25 conf thresh
                     label = '%s' % cls if labels else '%s %.1f' % (cls, conf[j])
                     plot_one_box(box, mosaic, label=label, color=color, line_thickness=tl)
