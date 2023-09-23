@@ -22,7 +22,7 @@ from utils.google_utils import gsutil_getsize
 from utils.metrics import fitness
 from utils.torch_utils import init_torch_seeds
 
-n_classes_lis=[80,3]
+n_classes_lis=[3,2]
 n_att=2
 
 
@@ -766,8 +766,10 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
         # Detections matrix nx6 (xyxy, conf, cls)
         x0=x.clone()
         if multi_label: 
+            #print("\nmaxend",i_att_lis[1])
             i, j = (x0[:, 5:i_att_lis[1]] > conf_thres).nonzero(as_tuple=False).T
             x= torch.cat((box[i], x0[i, j + 5, None], j[:, None].float()), -1)
+            #print("\ncls in nms",j)
             for k in range(1,n_att):
                 att_item = x0[i,-(n_classes_lis[k]):]
                 _,indexes_att=att_item.max(1, keepdim=True)

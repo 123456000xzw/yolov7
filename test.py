@@ -145,7 +145,8 @@ def test(data,
             for k in range(1,n_att):
                 out_wei=torch.cat([out_wei,out[k][...,5:]],-1)
             """
-            #print(len(out),out[0].size())  
+            #print(len(out),out[0].size(),out[0])
+
             out = non_max_suppression_MA(out, conf_thres=conf_thres, iou_thres=iou_thres, labels=lb, multi_label=True)
             #print(len(out),out[0].size())
             t1 += time_synchronized() - t
@@ -184,7 +185,7 @@ def test(data,
             # W&B logging - Media Panel Plots
             if len(wandb_images) < log_imgs and wandb_logger.current_epoch > 0:  # Check for test operation
                 if wandb_logger.current_epoch % wandb_logger.bbox_interval == 0:
-                    for k in range(n_att):
+                    for k in range(n_att):            
                         box_data = [{"position": {"minX": x1, "minY": y1, "maxX": x2, "maxY": y2},
                                     "class_id": int(cls[k]),
                                     "box_caption": "%s %.3f" % (names_classes_lis[k][int(cls[k])], conf),
@@ -218,8 +219,8 @@ def test(data,
                 scale_coords(img[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
                 if plots:
                     for k in range(n_att):
-                        confusion_pred=torch.cat((pred[:,:5],pred[:,5+k]),-1)
-                        confusion_label=torch.cat((labels[:,k],tbox),-1)
+                        confusion_pred=torch.cat((pred[:,:5],pred[:,5+k:6+k]),-1)
+                        confusion_label=torch.cat((labels[:,k:k+1],tbox),-1)
                         confusion_matrix[k].process_batch(confusion_pred, confusion_label)
 
                 # Per target class
