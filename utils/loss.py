@@ -460,21 +460,25 @@ class ComputeLoss:
         #print("\ntarget",targets.size())
         for k in range(n_att):
             targets_att=torch.cat([targets[:,0:1],targets[:,k+1:k+2],targets[:,1+n_att:]],-1)
-            tcls, tbox, indices, anchors = self.build_targets(p[k], targets_att)
+            p_att=[torch.cat([p[0][i][...,:5],p[k][i]],-1) for i in range(len(p[0]))]
+            if k==0:
+                p_att=p[k]
+            #print("\nComputeLoss before build_targets",k,len(p_att),p_att[0][0].size())
+            tcls, tbox, indices, anchors = self.build_targets(p_att, targets_att)
+
             #print("\nkk_tcls",len(tcls),tcls)
             for i, pi in enumerate(p[k]):  # layer index, layer predictions
                 b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
-                tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
                 n = b.shape[0]  # number of targets
                 if n:
                     ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
                     # Classification
                     if self.n_classes_lis[k] > 1:  # cls loss (only if multiple classes)
-                        t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
+                        t = torch.full_like(ps, self.cn, device=device)  # targets
                         t[range(n), tcls[i]] = self.cp
                         #t[t==self.cp] = iou.detach().clamp(0).type(t.dtype)
-                        lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
+                        lcls[k] += self.BCEcls(ps, t)  # BCE
         #other Losses
         targets_att=torch.cat([targets[:,0:2],targets[:,1+n_att:]],-1)
         tcls, tbox, indices, anchors = self.build_targets(p[0], targets_att)
@@ -611,9 +615,7 @@ class ComputeLossOTA:
         device = targets.device
         lcls, lbox, lobj = torch.zeros(n_att, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         #print("\nComputeLossOTA",targets.size(),targets[0])
-        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p[0]] 
-    
-
+        
         # Losses
         #cls Losses
         #print("\ntarget",targets.size())
@@ -622,11 +624,15 @@ class ComputeLossOTA:
             targets_att=torch.cat([targets[:,0:1],targets[:,k+1:k+2],targets[:,1+n_att:]],-1)
             #print("\nhere",len(p[k]),p[k][0].size())
             #print("\nhere",targets_att.size())
-            bs, as_, gjs, gis, targets_out, anchors = self.build_targets(p[k], targets_att, imgs,k)
+            #print("\nComputeLossOTA before p_att",k,len(p[0]),p[0][0].size())
+            p_att=[torch.cat([p[0][i][...,:5],p[k][i]],-1) for i in range(len(p[0]))]
+            if k==0:
+                p_att=p[k]
+            #print("\nComputeLossOTA before build_targets",k,len(p_att),p_att[0][0].size())
+            bs, as_, gjs, gis, targets_out, anchors = self.build_targets(p_att, targets_att, imgs,k)
 
             for i, pi in enumerate(p[k]):
                 b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
-                tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
                 n = b.shape[0]  # number of targets
                 if n:
@@ -634,11 +640,12 @@ class ComputeLossOTA:
                     # Classification
                     selected_tcls = targets_out[i][:, 1].long()
                     if self.n_classes_lis[k] > 1:  # cls loss (only if multiple classes)
-                        t = torch.full_like(ps[:, 5:], self.cn, device=device)  # targets
+                        t = torch.full_like(ps, self.cn, device=device)  # targets
                         t[range(n), selected_tcls] = self.cp
-                        lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
+                        lcls[k] += self.BCEcls(ps, t)  # BCE
         
         #other Losses
+        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p[0]] 
         targets_att=torch.cat([targets[:,0:2],targets[:,1+n_att:]],-1)
         bs, as_, gjs, gis, targets_out, anchors = self.build_targets(p[0], targets_att, imgs,0)
         for i, pi in enumerate(p[0]):  # layer index, layer predictions

@@ -44,6 +44,8 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 n_att=2
 
+os.environ['TORCH_DISTRIBUTED_DEBUG']='INFO'
+
 logger = logging.getLogger(__name__)
 
 
@@ -412,12 +414,15 @@ def train(hyp, opt, device, tb_writer=None):
                 #print("\n",len(imgs),imgs[0].size())
                 pred = model(imgs)  # forward
 
+                '''
                 for name, param in model.named_parameters():
                     if param.grad is None:
                         print("\nno backward",name)
+                '''
                 #print("\nout here")
                 #print(pred[0][0].size())
-                #print("\npred",len(pred),len(pred[0]),pred[0][0].size())
+                #print("\npred 0",len(pred),len(pred[0]),pred[0][0].size(),pred[0][1].size())
+                #print("\npred 1",len(pred),len(pred[1]),pred[1][0].size(),pred[1][1].size())
                 #weiImg=imgs
                 #print("\ntarget",targets.size(),targets[0])
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:

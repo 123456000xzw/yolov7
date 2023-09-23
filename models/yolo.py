@@ -102,7 +102,7 @@ class IDetect(nn.Module):
     include_nms = False
     concat = False
 
-    def __init__(self, n_classes=80, anchors=(), ch=()):  # detection layer
+    def __init__(self, n_classes=3, anchors=(), ch=()):  # detection layer
         super(IDetect, self).__init__()
         self.n_classes = n_classes  # number of classes
         self.no = n_classes + 5  # number of outputs per anchor
@@ -214,10 +214,10 @@ class IDetect_color(nn.Module):
     include_nms = False
     concat = False
 
-    def __init__(self, n_classes=3, anchors=(), ch=()):  # detection layer
+    def __init__(self, n_classes=2, anchors=(), ch=()):  # detection layer
         super(IDetect_color, self).__init__()
         self.n_classes = n_classes  # number of classes
-        self.no = n_classes + 5  # number of outputs per anchor
+        self.no = n_classes  # number of outputs per anchor
         self.nl = len(anchors)  # number of detection layers
         self.na = len(anchors[0]) // 2  # number of anchors
         self.grid = [torch.zeros(1)] * self.nl  # init grid
@@ -244,13 +244,14 @@ class IDetect_color(nn.Module):
                     self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
 
                 y = x[i].sigmoid()
-                y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                #y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                #y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
                 z.append(y.view(bs, -1, self.no))
 
         return x if self.training else (torch.cat(z, 1), x)
     
     def fuseforward(self, x):
+        print("Error,IDetect_color.fuseforward")
         # x = x.copy()  # for profiling
         z = []  # inference output
         self.training |= self.export
@@ -265,13 +266,16 @@ class IDetect_color(nn.Module):
 
                 y = x[i].sigmoid()
                 if not torch.onnx.is_in_onnx_export():
-                    y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    pass
+                    #y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    #y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
                 else:
-                    xy, wh, conf = y.split((2, 2, self.n_classes + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
-                    xy = xy * (2. * self.stride[i]) + (self.stride[i] * (self.grid[i] - 0.5))  # new xy
-                    wh = wh ** 2 * (4 * self.anchor_grid[i].data)  # new wh
-                    y = torch.cat((xy, wh, conf), 4)
+                    #xy, wh, conf = y.split((2, 2, self.n_classes + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
+                    #xy = xy * (2. * self.stride[i]) + (self.stride[i] * (self.grid[i] - 0.5))  # new xy
+                    #wh = wh ** 2 * (4 * self.anchor_grid[i].data)  # new wh
+                    #y = torch.cat((xy, wh, conf), 4)
+                    pass
+                #z.append(y.view(bs, -1, self.no))
                 z.append(y.view(bs, -1, self.no))
 
         if self.training:
@@ -279,6 +283,7 @@ class IDetect_color(nn.Module):
         elif self.end2end:
             out = torch.cat(z, 1)
         elif self.include_nms:
+            print("Error,IDetect_color.convert")
             z = self.convert(z)
             out = (z, )
         elif self.concat:
@@ -673,7 +678,7 @@ class Model(nn.Module):
                 check_anchor_order(m)
                 m.anchors /= m.stride.view(-1, 1, 1)
                 self.stride.append(m.stride)
-                self._initialize_biases(i=i)  # only run once
+                #self._initialize_biases(i=i)  # only run once
                 # print('Strides: %s' % m.stride.tolist())
             if isinstance(m, IAuxDetect):
                 s = 256  # 2x min stride
@@ -700,7 +705,7 @@ class Model(nn.Module):
                 self.stride = m.stride
                 self._initialize_biases_kpt()  # only run once
                 # print('Strides: %s' % m.stride.tolist())
-            self._initialize_biases()  # only run once
+            #self._initialize_biases()  # only run once
             self.heads.append(m)
 
         # Init weights, biases
@@ -855,7 +860,7 @@ class Model(nn.Module):
                 m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
                 delattr(m, 'bn')  # remove batchnorm
                 m.forward = m.fuseforward  # update forward
-            elif isinstance(m, (IDetect, IAuxDetect)):
+            elif isinstance(m, (IDetect,IDetect_color, IAuxDetect)):
                 m.fuse()
                 m.forward = m.fuseforward
         self.info()
