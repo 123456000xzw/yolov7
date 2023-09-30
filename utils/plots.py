@@ -61,12 +61,16 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=3):
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
     cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
+
+    plot_one_box_PIL(tuple((float(x[0]), float(x[1] - 1), float(x[2]), float(x[3]))), img, color, label, line_thickness)
+    '''
     if label:
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
         c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
         cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
         cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
+    '''
 
 
 def plot_one_box_PIL(box, img, color=None, label=None, line_thickness=None):
@@ -76,7 +80,7 @@ def plot_one_box_PIL(box, img, color=None, label=None, line_thickness=None):
     draw.rectangle(box, width=line_thickness, outline=tuple(color))  # plot
     if label:
         fontsize = max(round(max(img.size) / 40), 12)
-        font = ImageFont.truetype("Arial.ttf", fontsize)
+        font = ImageFont.truetype("fonts/SimHei.ttf", fontsize,encoding='UTF-8')
         txt_width, txt_height = font.getsize(label)
         draw.rectangle([box[0], box[1] - txt_height + 4, box[0] + txt_width, box[1]], fill=tuple(color))
         draw.text((box[0], box[1] - txt_height + 1), label, fill=(255, 255, 255), font=font)
@@ -322,7 +326,7 @@ def plot_labels(labels, names=(), save_dir=Path(''), loggers=None):
 
 def plot_evolution(yaml_file='data/hyp.finetune.yaml'):  # from utils.plots import *; plot_evolution()
     # Plot hyperparameter evolution results in evolve.txt
-    with open(yaml_file) as f:
+    with open(yaml_file,encoding='UTF-8') as f:
         hyp = yaml.load(f, Loader=yaml.SafeLoader)
     x = np.loadtxt('evolve.txt', ndmin=2)
     f = fitness(x)

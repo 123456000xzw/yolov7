@@ -62,14 +62,10 @@ def detect(save_img=False):
         dataset = LoadImages(source, img_size=imgsz, stride=stride)
 
     # Get names and colors
-    names = model.module.names if hasattr(model, 'module') else model.names
-    colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
+    names_classes_lis = model.module.names_classes_lis if hasattr(model, 'module') else model.names_classes_lis
+    colors = [[random.randint(0, 255) for _ in range(3)] for _ in names_classes_lis[0]]
 
-    colors_att=['red','green','blue']
-    attributes=[]
-    attributes.append(names)
-    attributes.append(colors_att)
-    n_att=len(attributes)
+    n_att=len(names_classes_lis)
 
     # Run inference
     if device.type != 'cpu':
@@ -107,8 +103,6 @@ def detect(save_img=False):
         #pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
 
         
-        #pred_attributes=torch.rand(pred.size(0),pred.size(1),3).to(device)
-        #pred=torch.cat([pred,pred_attributes],dim=2)
         print("\npred before NMS_MA",len(pred),pred[1].size())
         pred = non_max_suppression_MA(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         print("\npred after NMS_MA,",len(pred),len(pred[0]))
@@ -136,7 +130,7 @@ def detect(save_img=False):
                 # Print results
                 for c in det[:, 5].unique():
                     n = (det[:, 5] == c).sum()  # detections per class
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)},\n"  # add to string
+                    s += f"{n} {names_classes_lis[0][int(c)]}{'s' * (n > 1)},\n"  # add to string
 
                 # Write results
                 for x1,y1,x2,y2, conf, *cls in reversed(det):
@@ -148,7 +142,7 @@ def detect(save_img=False):
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
                     #print(torch.tensor(xyxy).size(),conf,torch.tensor(cls).size())
                     if save_img or view_img:  # Add bbox to image
-                        label = f'{[attributes[i][int(cls[i])] for i in range(n_att)]} {conf:.2f}'
+                        label = f'{[names_classes_lis[i][int(cls[i])] for i in range(n_att)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls[0])], line_thickness=1)
 
             # Print time (inference + NMS)

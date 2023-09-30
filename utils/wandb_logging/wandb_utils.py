@@ -54,7 +54,7 @@ def check_wandb_resume(opt):
 
 
 def process_wandb_config_ddp_mode(opt):
-    with open(opt.data) as f:
+    with open(opt.data,encoding='UTF-8') as f:
         data_dict = yaml.load(f, Loader=yaml.SafeLoader)  # data dict
     train_dir, val_dir = None, None
     if isinstance(data_dict['train'], str) and data_dict['train'].startswith(WANDB_ARTIFACT_PREFIX):
@@ -72,7 +72,7 @@ def process_wandb_config_ddp_mode(opt):
         data_dict['val'] = str(val_path)
     if train_dir or val_dir:
         ddp_data_path = str(Path(val_dir) / 'wandb_local_data.yaml')
-        with open(ddp_data_path, 'w') as f:
+        with open(ddp_data_path, 'w',encoding='UTF-8') as f:
             yaml.dump(data_dict, f)
         opt.data = ddp_data_path
 
@@ -119,7 +119,7 @@ class WandbLogger():
                                                 opt.single_cls,
                                                 'YOLOR' if opt.project == 'runs/train' else Path(opt.project).stem)
         print("Created dataset config file ", config_path)
-        with open(config_path) as f:
+        with open(config_path,encoding='UTF-8') as f:
             wandb_data_dict = yaml.load(f, Loader=yaml.SafeLoader)
         return wandb_data_dict
 
@@ -191,7 +191,7 @@ class WandbLogger():
         print("Saving model artifact on epoch ", epoch + 1)
 
     def log_dataset_artifact(self, data_file, single_cls, project, overwrite_config=False):
-        with open(data_file) as f:
+        with open(data_file,encoding='UTF-8') as f:
             data = yaml.load(f, Loader=yaml.SafeLoader)  # data dict
         nc, names = (1, ['item']) if single_cls else (int(data['nc']), data['names'])
         names = {k: v for k, v in enumerate(names)}  # to index dictionary
@@ -205,7 +205,7 @@ class WandbLogger():
             data['val'] = WANDB_ARTIFACT_PREFIX + str(Path(project) / 'val')
         path = data_file if overwrite_config else '_wandb.'.join(data_file.rsplit('.', 1))  # updated data.yaml path
         data.pop('download', None)
-        with open(path, 'w') as f:
+        with open(path, 'w',encoding='UTF-8') as f:
             yaml.dump(data, f)
 
         if self.job_type == 'Training':  # builds correct artifact pipeline graph

@@ -22,6 +22,8 @@ from utils.google_utils import gsutil_getsize
 from utils.metrics import fitness
 from utils.torch_utils import init_torch_seeds
 
+from PIL import Image, ImageDraw, ImageFont
+
 n_classes_lis=[3,2]
 n_att=2
 
@@ -721,6 +723,8 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
         i_att_lis.append(i_att_lis[k]+n_classes_lis[k])
 
     nc = n_classes_lis[0]  # number of classes
+
+    print("\nNMS_1,xc = prediction[..., 4] > conf_thres",max(prediction[..., 4]),min(prediction[..., 4]))
     xc = prediction[..., 4] > conf_thres  # candidates
 
     # Settings
@@ -759,6 +763,7 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
                                  # so there is no need to multiplicate.
         else:
             x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
+            print("\nNMS_2,x[:, 5:] *= x[:, 4:5]",max(x[:, 4]),min(x[:, 4]))
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
@@ -766,8 +771,8 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
         # Detections matrix nx6 (xyxy, conf, cls)
         x0=x.clone()
         if multi_label: 
-            #print("\nmaxend",i_att_lis[1])
             i, j = (x0[:, 5:i_att_lis[1]] > conf_thres).nonzero(as_tuple=False).T
+            print("\nNMS_3_multi,i, j = (x0[:, 5:i_att_lis[1]] > conf_thres).nonzero(as_tuple=False).T",max(x0[i, j + 5, None]),min(x0[i, j + 5, None]))
             x= torch.cat((box[i], x0[i, j + 5, None], j[:, None].float()), -1)
             #print("\ncls in nms",j)
             for k in range(1,n_att):
@@ -776,6 +781,7 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
                 x=torch.cat([x,indexes_att],-1)
         else:  # best class only
             conf, j = x0[:, 5:i_att_lis[1]].max(1, keepdim=True)
+            print("\nNMS_3_best,conf, j = x0[:, 5:i_att_lis[1]].max(1, keepdim=True)",max(conf),min(conf))
             x = torch.cat((box, conf, j.float()), -1)
             for k in range(1,n_att):
                 att_item = x0[:,-(n_classes_lis[k]):]
@@ -1146,3 +1152,6 @@ def increment_path(path, exist_ok=True, sep=''):
         i = [int(m.groups()[0]) for m in matches if m]  # indices
         n = max(i) + 1 if i else 2  # increment number
         return f"{path}{sep}{n}"  # update path
+
+if __name__ == "__main__":
+    pass
