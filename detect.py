@@ -93,8 +93,9 @@ def detect(save_img=False):
         t1 = time_synchronized()
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
             pred,train_out=[],[]
+            out_total=model(img, augment=opt.augment)
             for k in range(n_att):
-                each_out,each_train_out = model(img, augment=opt.augment)[k]  # inference and training outputs
+                each_out,each_train_out =out_total[k]  # inference and training outputs
                 pred.append(each_out)
                 #train_out.append(each_train_out)
         t2 = time_synchronized()

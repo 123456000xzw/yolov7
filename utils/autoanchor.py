@@ -45,6 +45,8 @@ def check_anchors(dataset, model, thr=4.0, imgsz=640):
         na = m.anchor_grid.numel() // 2  # number of anchors
         try:
             anchors = kmean_anchors(dataset, n=na, img_size=imgsz, thr=thr, gen=1000, verbose=False)
+            #
+            # pass
         except Exception as e:
             print(f'{prefix}ERROR: {e}')
         new_bpr = metric(anchors)[0]

@@ -723,8 +723,6 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
         i_att_lis.append(i_att_lis[k]+n_classes_lis[k])
 
     nc = n_classes_lis[0]  # number of classes
-
-    print("\nNMS_1,xc = prediction[..., 4] > conf_thres",max(prediction[..., 4]),min(prediction[..., 4]))
     xc = prediction[..., 4] > conf_thres  # candidates
 
     # Settings
@@ -741,8 +739,13 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
+        len_total=len(x)
         x = x[xc[xi]]  # confidence
-
+        if len(x)>0:
+            print("\n",conf_thres,xi,"NMS_1,x = x[xc[xi]] [{}/{}]".format(len(x),len_total),max(x[:, 4]),min(x[:, 4]))
+        else:
+            print("\n",conf_thres,xi,"NMS_1,x = x[xc[xi]] [{}/{}]".format(len(x),len_total))
+            
         # Cat apriori labels if autolabelling
         if labels and len(labels[xi]):
             l = labels[xi]
@@ -763,7 +766,6 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
                                  # so there is no need to multiplicate.
         else:
             x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
-            print("\nNMS_2,x[:, 5:] *= x[:, 4:5]",max(x[:, 4]),min(x[:, 4]))
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
@@ -772,7 +774,7 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
         x0=x.clone()
         if multi_label: 
             i, j = (x0[:, 5:i_att_lis[1]] > conf_thres).nonzero(as_tuple=False).T
-            print("\nNMS_3_multi,i, j = (x0[:, 5:i_att_lis[1]] > conf_thres).nonzero(as_tuple=False).T",max(x0[i, j + 5, None]),min(x0[i, j + 5, None]))
+            #print("\nNMS_3_multi,i, j = (x0[:, 5:i_att_lis[1]] > conf_thres).nonzero(as_tuple=False).T",max(x0[i, j + 5, None]),min(x0[i, j + 5, None]))
             x= torch.cat((box[i], x0[i, j + 5, None], j[:, None].float()), -1)
             #print("\ncls in nms",j)
             for k in range(1,n_att):
@@ -781,7 +783,7 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
                 x=torch.cat([x,indexes_att],-1)
         else:  # best class only
             conf, j = x0[:, 5:i_att_lis[1]].max(1, keepdim=True)
-            print("\nNMS_3_best,conf, j = x0[:, 5:i_att_lis[1]].max(1, keepdim=True)",max(conf),min(conf))
+            #print("\nNMS_3_best,conf, j = x0[:, 5:i_att_lis[1]].max(1, keepdim=True)",max(conf),min(conf))
             x = torch.cat((box, conf, j.float()), -1)
             for k in range(1,n_att):
                 att_item = x0[:,-(n_classes_lis[k]):]

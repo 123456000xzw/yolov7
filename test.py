@@ -116,8 +116,7 @@ def test(data,
         with torch.no_grad():
             # Run model
             t = time_synchronized()
-            #print("\n",len(img),img[0].size())
-            #print("\ntest mode")
+            '''
             out,train_out=[],[]
             for k in range(n_att):
                 each_out,each_train_out = model(img, augment=augment)[k]  # inference and training outputs
@@ -125,12 +124,19 @@ def test(data,
                 train_out.append(each_train_out)
                 #print(len(out[i]),out[i][0].size())
                 #print(len(train_out[i]),train_out[i][0].size())
+            '''
+            out_total= model(img, augment=augment)  # inference and training outputs
+            out,train_out=[],[]
+            for k in range(n_att):
+                each_out,each_train_out = out_total[k]  # inference and training outputs
+                out.append(each_out)
+                train_out.append(each_train_out)
+
             t0 += time_synchronized() - t
 
             
             # Compute loss
             if compute_loss:
-                #print("emaout",len(out[1]),out[1][0].size())
                 pred=[]
                 for k in range(n_att):
                     pred.append([x.float() for x in train_out[k]])

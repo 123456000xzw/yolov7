@@ -109,6 +109,15 @@ def train(hyp, opt, device, tb_writer=None):
     model.names_classes_lis=data_dict['names_classes_lis']
     n_classes_lis=data_dict['n_classes_lis']
     name_att=data_dict['name_att']
+    cls_name_att=['cls_{}'.format(a) for a in name_att]
+
+    loss_precision_metrics=['metrics/precision_{}'.format(a) for a in name_att]
+    loss_recall_metrics=['metrics/recall_{}'.format(a) for a in name_att]
+    loss_mAP_05_metrics=['metrics/mAP_0.5_{}'.format(a) for a in name_att]
+    loss_mAP_05095_metrics=['metrics/mAP_0.5:0.95_{}'.format(a) for a in name_att]
+
+    loss_cls_train=['train/cls_{}_loss'.format(a) for a in name_att]
+    loss_cls_val=['val/cls_{}_loss'.format(a) for a in name_att]
 
 
     # Freeze
@@ -305,7 +314,7 @@ def train(hyp, opt, device, tb_writer=None):
             if plots:
                 #plot_labels(labels, names, save_dir, loggers)
                 if tb_writer:
-                    [tb_writer.add_histogram(name_att[k], c[k], 0) for k in range(n_att)]
+                    [tb_writer.add_histogram(cls_name_att[k], c[k], k) for k in range(n_att)]
 
             # Anchors
             if not opt.noautoanchor:
@@ -318,6 +327,7 @@ def train(hyp, opt, device, tb_writer=None):
                     # nn.MultiheadAttention incompatibility with DDP https://github.com/pytorch/pytorch/issues/26698
                     find_unused_parameters=any(isinstance(layer, nn.MultiheadAttention) for layer in model.modules()))
 
+    #Wei
     # Model parameters
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= 3. / nl  # scale to classes and layers    #80
@@ -326,8 +336,16 @@ def train(hyp, opt, device, tb_writer=None):
 
     model.hyp = hyp  # attach hyperparameters to model
     model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
-    model.class_weights = labels_to_class_weights(dataset.labels, n_classes_lis[0]).to(device) * n_classes_lis[0]  # attach class weights
-    #model.class_weights = [labels_to_class_weights(np.array(dataset.labels,dtype=np.float32)[...,k:k+1], n_classes_lis[k]).to(device)*n_classes_lis[k] for k in range(n_att)]  # attach class weights
+    #model.class_weights = labels_to_class_weights(dataset.labels, n_classes_lis[0]).to(device) * n_classes_lis[0]  # attach class weights
+    
+    labels_att=[]
+    for k in range(n_att):
+        each_att_label=[]
+        for labels_np in dataset.labels:
+            each_att_label.append(labels_np[:,k].reshape(-1,1))
+        labels_att.append(each_att_label)
+    
+    model.class_weights = [labels_to_class_weights(labels_att[k], n_classes_lis[k]).to(device)*n_classes_lis[k] for k in range(n_att)]  # attach class weights
     #ema.update(model)
 
 
@@ -378,7 +396,7 @@ def train(hyp, opt, device, tb_writer=None):
             dataloader.sampler.set_epoch(epoch)
         pbar = enumerate(dataloader)
         #Wei,373
-        logger.info(('\n' + '%10s' * (7+n_att)) % ('Epoch', 'gpu_mem', 'box', 'obj', *name_att, 'total', 'labels', 'img_size'))
+        logger.info(('\n' + '%10s' * (7+n_att)) % ('Epoch', 'gpu_mem', 'box', 'obj', *cls_name_att, 'total', 'labels', 'img_size'))
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
@@ -411,6 +429,7 @@ def train(hyp, opt, device, tb_writer=None):
             #print("\nlet us forward")
             # Forward
             with amp.autocast(enabled=cuda):
+                #torch.autograd.set_detect_anomaly(True)
                 #print("\n",len(imgs),imgs[0].size())
                 pred = model(imgs)  # forward
 
@@ -435,6 +454,7 @@ def train(hyp, opt, device, tb_writer=None):
                     loss *= 4.
 
             # Backward
+            #with torch.autograd.detect_anomaly():
             scaler.scale(loss).backward()
 
             # Optimize
@@ -510,14 +530,14 @@ def train(hyp, opt, device, tb_writer=None):
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
 
             # Log
-            tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
-                    'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
-                    'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
-                    'x/lr0', 'x/lr1', 'x/lr2']  # params
+            tags = [['train/box_loss', 'train/obj_loss', loss_cls_train[k],
+                    loss_precision_metrics[k], loss_recall_metrics[k], loss_mAP_05_metrics[k],loss_mAP_05095_metrics[k],'val/box_loss', 'val/obj_loss', loss_cls_val[k],'x/lr0', 'x/lr1', 'x/lr2'] for k in range(n_att)]
             
             #Wei,505-510
             for k in range(n_att):
-                for x, tag in zip(list(mloss[:-1]) + list(results[k]) + lr, tags):
+                loss_att=mloss[[0,1,2+k]]
+                print(k,"\n",mloss,"\n",loss_att,"\n",results[k],"\n",tags[k],"\n")
+                for x, tag in zip(list(loss_att) + list(results[k]) + lr, tags[k]):
                     if tb_writer:
                         tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                     if wandb_logger.wandb:
