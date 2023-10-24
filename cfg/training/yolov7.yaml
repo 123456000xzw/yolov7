@@ -1,7 +1,7 @@
 # parameters
 depth_multiple: 1.0  # model depth multiple
 width_multiple: 1.0  # layer channel multiple
-n_classes_lis: [3,2] #classes of each attribute
+n_classes_lis: [9,5,2,4] #classes of each attribute
 
 
 # anchors
@@ -137,7 +137,9 @@ head:
    [88, 1, RepConv, [512, 3, 1]],
    [101, 1, RepConv, [1024, 3, 1]],
 
-   [[102,103,104], 1, IDetect, [3,anchors]],   # Detect(P3, P4, P5)
-   [[102,103,104], 1, IDetect_color, [2,anchors]],   # Detect(P3, P4, P5)
+   [[102,103,104], 1, IDetect, [9,anchors]],   # Detect(P3, P4, P5)
+   [[102,103,104], 1, IDetect_att2, [5,anchors]],   # Detect(P3, P4, P5)
+   [[102,103,104], 1, IDetect_att3, [2,anchors]],   # Detect(P3, P4, P5)
+   [[102,103,104], 1, IDetect_att4, [4,anchors]],   # Detect(P3, P4, P5)
   
   ]

@@ -42,7 +42,7 @@ from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 #OMP: Error #15
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-n_att=2
+n_att=4
 
 os.environ['TORCH_DISTRIBUTED_DEBUG']='INFO'
 

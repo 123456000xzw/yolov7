@@ -30,7 +30,7 @@ from utils.general import check_requirements, xyxy2xywh, xywh2xyxy, xywhn2xyxy, 
     resample_segments, clean_str
 from utils.torch_utils import torch_distributed_zero_first
 
-n_att=2
+n_att=4
 
 # Parameters
 help_url = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'

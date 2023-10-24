@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from utils.general import bbox_iou, bbox_alpha_iou, box_iou, box_giou, box_diou, box_ciou, xywh2xyxy
 from utils.torch_utils import is_parallel
 
-n_att=2
+n_att=4
 
 def smooth_BCE(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
     # return positive, negative label smoothing BCE targets
@@ -496,12 +496,13 @@ class ComputeLoss:
                         #t[t==self.cp] = iou.detach().clamp(0).type(t.dtype)
                 
                         #lcls[k] += self.CEcls[k](ps[:, 5:], tcls[i].flatten())  # CE
-                        
+                        lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
+                        '''
                         if k!=0:
                             lcls[k] += self.CEcls[k-1](ps[:, 5:], tcls[i].flatten())  # CE
                         else:
                             lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
-                        
+                        '''
         #other Losses
         targets_att=torch.cat([targets[:,0:2],targets[:,1+n_att:]],-1)
         tcls, tbox, indices, anchors = self.build_targets(p[0], targets_att)
@@ -666,11 +667,13 @@ class ComputeLossOTA:
                 p_att=[torch.cat([p[0][i][...,:5],p[k][i]],-1) for i in range(len(p[0]))]
 
             #print("\nComputeLossOTA before build_targets",k,len(p_att),p_att[0][0].size())
+            bs, as_, gjs, gis, targets_out, anchors = self.build_targets_BCE(p_att, targets_att, imgs,k)
+            '''
             if k==0:
                 bs, as_, gjs, gis, targets_out, anchors = self.build_targets_BCE(p_att, targets_att, imgs,k)
             else:
                 bs, as_, gjs, gis, targets_out, anchors = self.build_targets_CE(p_att, targets_att, imgs)
-
+            '''
             for i, pi in enumerate(p_att):
                 b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
 
@@ -686,12 +689,13 @@ class ComputeLossOTA:
                         t[range(n), selected_tcls] = self.cp
                         
                         #lcls[k] += self.CEcls[k](ps[:, 5:],selected_tcls.flatten())  # CE
-                        
+                        lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
+                        '''
                         if k!=0:
                             lcls[k] += self.CEcls[k-1](ps[:, 5:], selected_tcls.flatten())  # CE
                         else:
                             lcls[k] += self.BCEcls(ps[:, 5:], t)  # BCE
-                        
+                        '''
         
         #other Losses
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p[0]] 

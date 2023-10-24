@@ -10,10 +10,15 @@ test: ./datasets/widerface640x640/images/test  # 20288 of 40670 images, submit t
 
 
 #names_classes_lis: [names,colors_att]
-names_classes_lis: [['qinxi','shaomohu', 'henmohu'],['normal','strange']]
+att1: ['singpeople','multipeople','jiaoche','kache','yueyeche','fuzhuche','lunjia','lvjia','tanke']
+att2: ['buqiang','jiqiang','huojiantong','huopao','kong']
+att3: ['kaihuo','guanhuo']
+att4: ['chaoyou','chaozuo','chaoqian','chaohou']
+names_classes_lis: [att1,att2,att3,att4]
+#names_classes_lis: [['qinxi','shaomohu', 'henmohu'],['normal','strange']]
 
 #names for each attribute
-name_att: ['blur','expression']
+name_att: ['main','weapon','fire','direction']
 
 #classes of each attribute
-n_classes_lis: [3,2]
+n_classes_lis: [9,5,2,4]

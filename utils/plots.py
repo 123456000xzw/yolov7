@@ -24,7 +24,7 @@ from utils.metrics import fitness
 # Settings
 matplotlib.rc('font', **{'size': 11})
 matplotlib.use('Agg')  # for writing to files only
-n_att=2
+n_att=4
 
 
 def color_list():

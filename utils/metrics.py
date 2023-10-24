@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from . import general
-n_att=2
+n_att=4
 
 def fitness(x):
     # Model fitness as a weighted combination of metrics

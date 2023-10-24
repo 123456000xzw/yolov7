@@ -24,8 +24,8 @@ from utils.torch_utils import init_torch_seeds
 
 from PIL import Image, ImageDraw, ImageFont
 
-n_classes_lis=[3,2]
-n_att=2
+n_classes_lis=[9,5,2,4]
+n_att=4
 
 
 # Settings
@@ -827,142 +827,6 @@ def non_max_suppression_MA(prediction, conf_thres=0.25, iou_thres=0.45, classes=
             break  # time limit exceeded
 
     return output
-
-def non_max_suppression_MA2(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,
-                        labels=()):
-    """Runs Non-Maximum Suppression (NMS) on inference results
-    prediction: [
-                [B, n, 5+80],
-                [B, n, 5+3]
-                ]
-
-    Returns:
-         list of detections, on (n,6) tensor per image [xyxy, conf, cls]
-    """
-    print("\nNMS_MA")
-    nc = prediction[0].shape[2] - 5  # number of classes
-    xc = prediction[0][..., 4] > conf_thres  # candidates
-
-    # Settings
-    min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
-    max_det = 300  # maximum number of detections per image
-    max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
-    time_limit = 10.0  # seconds to quit after
-    redundant = True  # require redundant detections
-    multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
-    merge = False  # use merge-NMS
-
-    t = time.time()
-    output = [torch.zeros((0, 5+n_att), device=prediction[0].device)] * prediction[0].shape[0]
-    print("\nprediction[0]",prediction[0].size())
-    for xi, x in enumerate(prediction[0]):  # image index, image inference
-        print("\nxi,x",xi,x.size())
-        # Apply constraints
-        # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
-        x = x[xc[xi]]  # confidence
-        print("\nafter confidence",xi,x.size())
-        for k in range(1,n_att):
-            prediction[k][xi]=prediction[k][xi][xc[xi]]
-
-        # Cat apriori labels if autolabelling
-        if labels and len(labels[xi]):
-            l = labels[xi]
-            v = torch.zeros((len(l), nc + 5), device=x.device)
-            v[:, :4] = l[:, 1:5]  # box
-            v[:, 4] = 1.0  # conf
-            v[range(len(l)), l[:, 0].long() + 5] = 1.0  # cls
-            x = torch.cat((x, v), 0)
-
-        print("\n111",x.size())
-        # If none remain process next image
-        if not x.shape[0]:
-            print("\nshape false")
-            continue
-
-        # Compute conf
-        if nc == 1:
-            x[:, 5:] = x[:, 4:5] # for models with one class, cls_loss is 0 and cls_conf is always 0.5,
-                                 # so there is no need to multiplicate.
-        else:
-            x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
-
-        print("\nbefore nx6",x.size())
-
-        # Box (center x, center y, width, height) to (x1, y1, x2, y2)
-        box = xywh2xyxy(x[:, :4])
-
-        print("\nafter xywh2xyxy",x.size())
-        # Detections matrix nx6 (xyxy, conf, cls)
-        if multi_label:
-            i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
-            x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
-            print("\nafter multi_label",x.size())
-        else:  # best class only
-            conf, j = x[:, 5:].max(1, keepdim=True)
-            x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
-
-        print("\n222",x.size())
-
-        # Filter by class
-        if classes is not None:
-            print("\nFilter by class before x",x.size())
-            x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
-            print("\nFilter by class after x",x.size())
-    
-        # Apply finite constraint
-        # if not torch.isfinite(x).all():
-        #     x = x[torch.isfinite(x).all(1)]
-
-        # Check shape
-        n = x.shape[0]  # number of boxes
-        if not n:  # no boxes
-            print("\nno boxes")
-            continue
-        elif n > max_nms:  # excess boxes
-            print("\nn>max_nms")
-            x = x[x[:, 4].argsort(descending=True)[:max_nms]]  # sort by confidence
-
-        # Batched NMS
-        c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
-        boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
-        i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
-        print("\nhow to get i",i.size(),22143 in i,x.size(),boxes.size(),scores.size())
-        if i.shape[0] > max_det:  # limit detections
-            i = i[:max_det]
-        if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
-            # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
-            iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix
-            weights = iou * scores[None]  # box weights
-            x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
-            if redundant:
-                i = i[iou.sum(1) > 1]  # require redundancy
-        
-        print("\n333")
-        
-        indexes=torch.zeros((len(i), 0), device=prediction[0].device)
-        print("\ni,x[i]",i.size(),x[i].size())
-        #output[xi]=x[i]
-        
-        for k in range(1,n_att):
-            print("\nconcat indexes",k,xi,prediction[0][xi].size(),prediction[k][xi].size())
-            if(22143 in i):
-                print("\n22143 in i,true")
-            att_item = prediction[k][xi][i,-(n_classes_lis[k]):]
-            print("\nitem",att_item.size())
-            _,indexes_att=att_item.max(1, keepdim=True)
-            print(indexes.size(),indexes_att.size())
-            indexes=torch.cat([indexes,indexes_att],-1)
-        print("\nindexes",indexes.size())
-        output[xi] = torch.cat([x[i],indexes],-1)
-        
-       
-
-        if (time.time() - t) > time_limit:
-            print(f'WARNING: NMS time limit {time_limit}s exceeded')
-            break  # time limit exceeded
-
-    return output
-
 
 def non_max_suppression_kpt(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,
                         labels=(), kpt_label=False, n_classes=None, nkpt=None):

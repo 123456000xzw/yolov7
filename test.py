@@ -17,7 +17,7 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized, TracedModel,is_parallel
 
-n_att=2
+n_att=4
 
 def test(data,
          weights=None,
